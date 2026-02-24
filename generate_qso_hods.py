@@ -37,8 +37,15 @@ Generate HOD catalogs:
     python generate_qso_hods.py --path2config config/abacus_hod.yaml \\
         --output output/qso_hods.hdf5 --Nthread 32
 
-Output HDF5 layout
-------------------
+Output files
+------------
+Two files are written automatically with the same base name:
+
+    output/qso_hods.hdf5   – structured HDF5 (random-access per run)
+    output/qso_hods.npz    – flat NumPy archive (easy to load without h5py)
+
+HDF5 layout
+-----------
     /
     ├── attrs              n_runs, param_names, sampling, seed, want_rsd,
     |                      sim_name, z_mock
@@ -49,7 +56,7 @@ Output HDF5 layout
     ├── params             [n_runs × 8]  one row per HOD run
     ├── n_gal              [n_runs]      total QSO count per run
     ├── fixed_params/
-    │   └── attrs          p_max, s, s_v, …
+    │   └── attrs          s, s_v, …
     └── catalogs/
         ├── 000000/
         │   ├── attrs      logM_cut, logM1, sigma, alpha, kappa,
@@ -63,6 +70,23 @@ Output HDF5 layout
         │   ├── mass       [n_gal]  host halo mass [Msun/h]
         │   └── id         [n_gal]  host halo id
         └── …
+
+NPZ layout  (load with np.load("qso_hods.npz"))
+----------
+    params       [n_runs × 8]        HOD parameter matrix
+    n_gal        [n_runs]            galaxy count per run
+    param_names  [8]                 column names for params
+    offsets      [n_runs + 1]        cumulative galaxy counts;
+                                     run i spans offsets[i] : offsets[i+1]
+    x            [total_gal]         comoving x  [Mpc/h]  (all runs concat.)
+    y            [total_gal]         comoving y  [Mpc/h]
+    z            [total_gal]         comoving z  [Mpc/h]
+    vx           [total_gal]         peculiar vx [km/s]
+    vy           [total_gal]         peculiar vy [km/s]
+    vz           [total_gal]         peculiar vz [km/s]
+    mass         [total_gal]         host halo mass [Msun/h]
+    id           [total_gal]         host halo id
+    Ncent        [total_gal]         1 if central, 0 if satellite  (if present)
 """
 
 import argparse
@@ -104,6 +128,38 @@ def _to_abacus_params(params_i: dict) -> dict:
     if "log10_f_ic" in out:
         out["p_max"] = 10.0 ** out.pop("log10_f_ic")
     return out
+
+
+def _write_npz(
+    npz_path: Path,
+    samples: np.ndarray,
+    n_gals: np.ndarray,
+    param_names: list[str],
+    cat_accum: dict[str, list],
+) -> None:
+    """Write the flat NumPy companion file.
+
+    Catalog fields from all runs are concatenated into 1-D arrays.  Use the
+    ``offsets`` array to slice out a single run::
+
+        data    = np.load("qso_hods.npz")
+        i       = 42
+        sl      = slice(data["offsets"][i], data["offsets"][i + 1])
+        x_run_i = data["x"][sl]
+    """
+    offsets = np.concatenate([[0], np.cumsum(n_gals)])
+    npz_data: dict = {
+        "params":      samples.astype(np.float64),
+        "n_gal":       n_gals,
+        "param_names": np.array(param_names),
+        "offsets":     offsets,
+    }
+    for field, pieces in cat_accum.items():
+        non_empty = [np.asarray(p) for p in pieces if len(p) > 0]
+        if non_empty:
+            npz_data[field] = np.concatenate(non_empty)
+    np.savez_compressed(npz_path, **npz_data)
+    print(f"NPZ    : {npz_path}  ({npz_path.stat().st_size / 1e9:.2f} GB)")
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +301,7 @@ def generate_hod_samples(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     n_gals       = np.zeros(n_runs, dtype=np.int64)
+    cat_accum    = {field: [] for field in _CATALOG_FIELDS}
     log_interval = max(1, n_runs // 50)   # ~50 progress lines total
 
     # Column header for progress output
@@ -320,6 +377,9 @@ def generate_hod_samples(
                 arr = qso_cat.get(field)
                 if arr is not None and len(arr) > 0:
                     grp.create_dataset(field, data=arr, compression="lzf")
+                    cat_accum[field].append(np.asarray(arr))
+                else:
+                    cat_accum[field].append(np.array([]))
 
             if i == 0 or (i + 1) % log_interval == 0 or i == n_runs - 1:
                 vals_str = "  ".join(f"{v:{col_w}.4f}" for v in row)
@@ -330,7 +390,9 @@ def generate_hod_samples(
           f"({elapsed / n_runs * 1e3:.1f} ms/run)")
     print(f"N_QSO  min={n_gals.min()}  max={n_gals.max()}  "
           f"median={int(np.median(n_gals))}")
-    print(f"Output : {out_path}  ({out_path.stat().st_size / 1e9:.2f} GB)")
+    print(f"HDF5   : {out_path}  ({out_path.stat().st_size / 1e9:.2f} GB)")
+
+    _write_npz(out_path.with_suffix(".npz"), samples, n_gals, param_names, cat_accum)
 
 
 # ---------------------------------------------------------------------------
