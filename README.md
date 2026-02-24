@@ -22,31 +22,34 @@ QSO central occupation (Zheng+2007 form):
 Satellite occupation:
 
 ```
-<N_sat>(M) = [(M − κ M_cut) / M1]^α · <N_cen>(M)
+<N_sat>(M) = [(M − κ M_cut) / M1]^α   for M > κ M_cut, else 0
 ```
+
+Note: the satellite occupation is **not** modulated by `<N_cen>`. QSO satellites
+are treated independently of the central (unlike the LRG form in Zheng+2007).
 
 ### Varied parameters — priors from Table II of Yuan+2023 (QSO column)
 
-| Parameter  | Prior             | Bounds        | Description                         |
-|------------|-------------------|---------------|-------------------------------------|
-| `logM_cut` | N(12.7, 1.0)      | [11.2, 14.0]  | log₁₀ min halo mass [log₁₀ M☉/h]   |
-| `logM1`    | N(15.0, 1.0)      | [12.0, 16.0]  | log₁₀ satellite characteristic mass |
-| `sigma`    | N(0.5,  0.5)      | [0.0,  3.0]   | width of the central occupation step |
-| `alpha`    | N(1.0,  0.5)      | [0.3,  2.0]   | satellite power-law slope            |
-| `kappa`    | N(0.5,  0.5)      | [0.3,  3.0]   | satellite truncation parameter       |
-| `alpha_c`  | N(1.5,  1.0)      | [0.0,  2.0]   | central velocity bias                |
-| `alpha_s`  | N(0.2,  1.0)      | [0.0,  2.0]   | satellite velocity bias              |
+| Parameter     | Prior              | Bounds        | Description                                      |
+|---------------|--------------------|---------------|--------------------------------------------------|
+| `logM_cut`    | N(12.7, 1.0)       | [11.2, 14.0]  | log₁₀ min halo mass [log₁₀ M☉/h]                |
+| `logM1`       | N(15.0, 1.0)       | [12.0, 16.0]  | log₁₀ satellite characteristic mass              |
+| `sigma`       | N(0.5,  0.5)       | [0.0,  3.0]   | width of the central occupation step             |
+| `alpha`       | N(1.0,  0.5)       | [0.3,  2.0]   | satellite power-law slope                        |
+| `kappa`       | N(0.5,  0.5)       | [0.3,  3.0]   | satellite truncation parameter                   |
+| `alpha_c`     | N(1.5,  1.0)       | [0.0,  2.0]   | central velocity bias                            |
+| `alpha_s`     | N(0.2,  1.0)       | [0.0,  2.0]   | satellite velocity bias                          |
+| `log10_f_ic`  | N(−1.35, 0.5)      | [−2.1, −0.6]  | log₁₀ incompleteness / max central occupation; `p_max = 10^log10_f_ic` (called *f_ic* in Yuan+23 Fig 12) |
 
 ### Fixed parameters
 
-`p_max = 0.33` (max central occupation probability); all assembly-bias and
-satellite profile-rank parameters are set to zero.
+All assembly-bias and satellite profile-rank parameters are set to zero.
 
 ---
 
 ## Sampling strategy
 
-With 7 parameters, a Cartesian grid is impractical. Instead the script draws
+With 8 parameters, a Cartesian grid is impractical. Instead the script draws
 `n_samples` points using one of two strategies (set via `param_space.sampling`
 in the config):
 
@@ -124,6 +127,45 @@ Both steps can be combined by passing `--prepare_sim` together with the other fl
 
 ---
 
+## Helper scripts
+
+### `compute_number_density.py` — comoving number density per run
+
+```bash
+python compute_number_density.py output/qso_hods.hdf5 --box_size 2000
+```
+
+Prints summary statistics (`n_bar` min / max / median) and optionally saves
+an `.npz` file with `n_bar` and `n_gal` arrays:
+
+```bash
+python compute_number_density.py output/qso_hods.hdf5 --box_size 2000 \
+    --output output/nbar.npz
+```
+
+Can also be imported as a module:
+
+```python
+from compute_number_density import compute_number_densities
+result = compute_number_densities("output/qso_hods.hdf5", box_size_mpch=2000.0)
+print(result["n_bar"])   # ndarray, shape (n_runs,), units (Mpc/h)^{-3}
+```
+
+### `plot_occupation.py` — occupation functions vs halo mass
+
+```bash
+python plot_occupation.py \
+    --logM_cut 12.7 --logM1 14.5 --sigma 0.5 \
+    --alpha 1.0 --kappa 0.5 --log10_f_ic -1.35 \
+    --output occupation.png
+```
+
+Produces a log–log plot of `<N_cen>(M)`, `<N_sat>(M)`, and `<N_tot>(M)`.
+Can also be used as a module (see `plot_occupation` and `n_cen` / `n_sat`
+functions).
+
+---
+
 ## Output format
 
 One HDF5 file containing all catalogs:
@@ -136,14 +178,14 @@ qso_hods.hdf5
 │   ├── logM_cut/      attrs: prior_mean, prior_sigma, bounds_lo, bounds_hi
 │   ├── logM1/         attrs: …
 │   └── …              (one group per varied parameter)
-├── params             [n_runs × 7]  parameter vectors; columns = param_names
+├── params             [n_runs × 8]  parameter vectors; columns = param_names
 ├── n_gal              [n_runs]      total QSO count per run
 ├── fixed_params/
-│   └── attrs          p_max, s, s_v, s_p, s_r, Acent, Asat, Bcent, Bsat, ic
+│   └── attrs          s, s_v, s_p, s_r, Acent, Asat, Bcent, Bsat, ic
 └── catalogs/
     ├── 000000/
     │   ├── attrs      logM_cut, logM1, sigma, alpha, kappa, alpha_c,
-    │   │               alpha_s, n_gal
+    │   │               alpha_s, log10_f_ic, n_gal
     │   ├── x          [n_gal]  comoving x  [Mpc/h]
     │   ├── y          [n_gal]  comoving y  [Mpc/h]
     │   ├── z          [n_gal]  comoving z  [Mpc/h]
@@ -163,7 +205,7 @@ import numpy as np
 
 with h5py.File("output/qso_hods.hdf5", "r") as f:
     # Parameter table and galaxy counts
-    params = f["params"][:]        # shape (n_runs, 7)
+    params = f["params"][:]        # shape (n_runs, 8)
     cols   = list(f["params"].attrs["columns"])
     n_gal  = f["n_gal"][:]
 
