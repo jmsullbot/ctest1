@@ -3,19 +3,22 @@
 Generate QSO HOD mock catalogs over a parameter space drawn from the
 priors in Table II of Yuan et al. 2023 (arXiv:2306.06314), QSO column.
 
-Seven parameters are varied:
+Eight parameters are varied:
 
-    Parameter   Prior              Bounds       Description
-    ---------   -----              ------       -----------
-    logM_cut    N(12.7, 1.0)   [11.2, 14.0]   log10 min halo mass [log10 Msun/h]
-    logM1       N(15.0, 1.0)   [12.0, 16.0]   log10 satellite characteristic mass
-    sigma       N(0.5,  0.5)   [0.0,   3.0]   width of central occupation step
-    alpha       N(1.0,  0.5)   [0.3,   2.0]   satellite power-law slope
-    kappa       N(0.5,  0.5)   [0.3,   3.0]   satellite truncation parameter
-    alpha_c     N(1.5,  1.0)   [0.0,   2.0]   central velocity bias
-    alpha_s     N(0.2,  1.0)   [0.0,   2.0]   satellite velocity bias
+    Parameter    Prior               Bounds        Description
+    ---------    -----               ------        -----------
+    logM_cut     N(12.7, 1.0)   [11.2,  14.0]   log10 min halo mass [log10 Msun/h]
+    logM1        N(15.0, 1.0)   [12.0,  16.0]   log10 satellite characteristic mass
+    sigma        N(0.5,  0.5)   [0.0,    3.0]   width of central occupation step
+    alpha        N(1.0,  0.5)   [0.3,    2.0]   satellite power-law slope
+    kappa        N(0.5,  0.5)   [0.3,    3.0]   satellite truncation parameter
+    alpha_c      N(1.5,  1.0)   [0.0,    2.0]   central velocity bias
+    alpha_s      N(0.2,  1.0)   [0.0,    2.0]   satellite velocity bias
+    log10_f_ic   N(-1.35, 0.5)  [-2.1,  -0.6]   log10 of QSO incompleteness / max
+                                                   central occupation  (f_ic in Yuan+23
+                                                   Fig 12; passed to AbacusHOD as
+                                                   p_max = 10**log10_f_ic)
 
-p_max (max central occupation probability) is fixed at 0.33.
 All assembly-bias and profile-rank parameters are fixed at 0.
 
 Sampling strategies (set via param_space.sampling in the config):
@@ -43,14 +46,14 @@ Output HDF5 layout
     │   ├── logM_cut/      attrs: prior_mean, prior_sigma, bounds_lo, bounds_hi
     │   ├── logM1/         attrs: …
     │   └── …
-    ├── params             [n_runs × 7]  one row per HOD run
+    ├── params             [n_runs × 8]  one row per HOD run
     ├── n_gal              [n_runs]      total QSO count per run
     ├── fixed_params/
     │   └── attrs          p_max, s, s_v, …
     └── catalogs/
         ├── 000000/
         │   ├── attrs      logM_cut, logM1, sigma, alpha, kappa,
-        │   |               alpha_c, alpha_s, n_gal
+        │   |               alpha_c, alpha_s, log10_f_ic, n_gal
         │   ├── x          [n_gal]  comoving x  [Mpc/h]
         │   ├── y          [n_gal]  comoving y  [Mpc/h]
         │   ├── z          [n_gal]  comoving z  [Mpc/h]
@@ -74,7 +77,6 @@ import yaml
 # Fixed QSO HOD parameters (held constant for every run)
 # ---------------------------------------------------------------------------
 FIXED_PARAMS: dict = {
-    "p_max":  0.33,   # maximum central occupation probability
     # rank-based satellite profile flexibility (only active if want_ranks=True)
     "s":      0.0,
     "s_v":    0.0,
@@ -90,6 +92,18 @@ FIXED_PARAMS: dict = {
 }
 
 _CATALOG_FIELDS = ("x", "y", "z", "vx", "vy", "vz", "mass", "id", "Ncent")
+
+
+def _to_abacus_params(params_i: dict) -> dict:
+    """Convert sampled params to AbacusHOD-compatible names.
+
+    ``log10_f_ic`` is sampled in log10 space and must be exponentiated to
+    ``p_max`` before being passed to AbacusHOD.
+    """
+    out = dict(params_i)
+    if "log10_f_ic" in out:
+        out["p_max"] = 10.0 ** out.pop("log10_f_ic")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +229,7 @@ def generate_hod_samples(
 
     # Initialise AbacusHOD with the first sample as placeholder params
     first = dict(zip(param_names, samples[0]))
-    HOD_params["QSO_params"] = {**first, **FIXED_PARAMS}
+    HOD_params["QSO_params"] = {**_to_abacus_params(first), **FIXED_PARAMS}
 
     print("Loading simulation subsamples…")
     t0 = time.time()
@@ -234,7 +248,7 @@ def generate_hod_samples(
     log_interval = max(1, n_runs // 50)   # ~50 progress lines total
 
     # Column header for progress output
-    col_w = 8
+    col_w = max(8, max(len(n) for n in param_names))
     hdr_params = "  ".join(f"{n:>{col_w}}" for n in param_names)
     print(f"{'Run':>6}  {hdr_params}  {'N_QSO':>8}  {'dt ms':>7}")
     print("-" * (6 + (col_w + 2) * len(param_names) + 20))
@@ -279,7 +293,7 @@ def generate_hod_samples(
         for i, row in enumerate(samples):
             params_i = dict(zip(param_names, row))
 
-            ball.tracers["QSO"] = {**params_i, **FIXED_PARAMS}
+            ball.tracers["QSO"] = {**_to_abacus_params(params_i), **FIXED_PARAMS}
 
             t_run = time.time()
             mock_dict = ball.run_hod(

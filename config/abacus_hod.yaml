@@ -43,10 +43,10 @@ HOD_params:
         QSO: True
 
     # Placeholder QSO params used only to initialise AbacusHOD.
-    # The script overwrites the 7 varied params at each sample point.
+    # The script overwrites the 8 varied params at each sample point.
+    # p_max is not set here; it is derived from log10_f_ic at run time
+    # as  p_max = 10**log10_f_ic.
     QSO_params:
-        # --- fixed throughout all runs ---
-        p_max:    0.33      # max central occupation probability
 
         # rank-based satellite profile (only active if want_ranks=True)
         s:        0.0
@@ -64,6 +64,7 @@ HOD_params:
         ic:       1.0
 
         # --- varied params: placeholder values (overwritten per sample) ---
+        log10_f_ic: -1.35   # log10(f_ic); converted to p_max = 10**log10_f_ic
         logM_cut: 12.7
         logM1:    15.0
         sigma:     0.5
@@ -119,6 +120,9 @@ param_space:
         alpha_s:
             prior:  [0.2, 1.0]
             bounds: [0.0, 2.0]
+        log10_f_ic:
+            prior:  [-1.35, 0.5]    # log10(f_ic); Yuan+23 QSO posterior, Fig 12
+            bounds: [-2.1, -0.6]    # 10^-2.1 ≈ 0.008  …  10^-0.6 ≈ 0.25
 
 
 # ---------------------------------------------------------------------------
