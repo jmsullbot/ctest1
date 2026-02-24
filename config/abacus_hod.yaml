@@ -1,0 +1,155 @@
+# AbacusHOD configuration for QSO HOD grid generation
+#
+# Fill in the paths below before running. The simulation data (sim_dir) and
+# the AbacusSummit halo catalogs are NOT included in this repository - point
+# these paths at wherever you have the simulations stored.
+#
+# CAREFUL: YAML is sensitive to indentation - use spaces, not tabs.
+
+
+# ---------------------------------------------------------------------------
+# Simulation parameters
+# ---------------------------------------------------------------------------
+sim_params:
+    sim_name: 'AbacusSummit_base_c000_ph000'    # which AbacusSummit box to use
+    sim_dir: '/path/to/AbacusSummit/'            # directory containing the simulation
+    output_dir: '/path/to/output/mocks/'         # where to write galaxy mock catalogs (if write_to_disk=True)
+    subsample_dir: '/path/to/output/subsample/'  # where prepare_sim writes (and reads) subsampled halo data
+    z_mock: 1.1                                  # redshift snapshot to use (QSOs are typically at z~0.8-2.1)
+    cleaned_halos: True                          # use cleaned halo catalogs (recommended)
+
+
+# ---------------------------------------------------------------------------
+# prepare_sim settings (only used when running with --prepare_sim)
+# ---------------------------------------------------------------------------
+prepare_sim:
+    Nparallel_load: 5           # number of parallel processes for loading; peak memory scales with this
+    Nthread_per_load: 'auto'    # threads per process ('auto' uses the CPU affinity mask)
+
+
+# ---------------------------------------------------------------------------
+# HOD parameters
+# ---------------------------------------------------------------------------
+HOD_params:
+    want_ranks: False           # satellite profile flexibilities (rank-ordered by e.g. Vmax)
+    want_AB: False              # assembly bias (set True if Acent/Asat/Bcent/Bsat != 0)
+    density_sigma: 3            # scale radius [Mpc/h] for local density environment calculation
+    want_rsd: True              # include redshift-space distortions
+    write_to_disk: False        # write individual mock catalogs to output_dir (slow; leave False)
+
+    tracer_flags:
+        LRG: False
+        ELG: False
+        QSO: True               # only generate QSO mocks
+
+    # QSO HOD parameters.
+    #
+    # Central occupation:
+    #   <N_cen>(M) = p_max/2 * erfc[ ln(M_cut/M) / (sqrt(2) * sigma) ]
+    #
+    # Satellite occupation:
+    #   <N_sat>(M) = [(M - kappa*M_cut) / M1]^alpha * <N_cen>(M)
+    #
+    # The values here serve as initial/placeholder values; the generation
+    # script overwrites the varied parameters (logM_cut, sigma, p_max) at
+    # each grid point. The satellite parameters below are fixed for all runs.
+    QSO_params:
+        # --- central parameters (varied over the grid) ---
+        p_max:    0.33      # max central occupation probability  (placeholder)
+        logM_cut: 12.21     # log10 minimum halo mass [Msun/h]    (placeholder)
+        sigma:    0.56      # width of the central occupation step (placeholder)
+
+        # --- satellite parameters (fixed for all runs) ---
+        logM1:   13.94      # log10 characteristic satellite halo mass [Msun/h]
+        kappa:    1.0       # satellite truncation parameter
+        alpha:    0.4       # satellite power-law slope
+
+        # --- velocity bias (0 = no bias) ---
+        alpha_c:  0.0       # central velocity bias
+        alpha_s:  1.0       # satellite velocity bias
+
+        # --- rank-based satellite profile (only active if want_ranks=True) ---
+        s:        0.0
+        s_v:      0.0
+        s_p:      0.0
+        s_r:      0.0
+
+        # --- assembly bias amplitudes (only active if want_AB=True) ---
+        A_s:      1.0
+        Acent:    0.0
+        Asat:     0.0
+        Bcent:    0.0
+        Bsat:     0.0
+
+        # --- incompleteness ---
+        ic:       1.0
+
+
+# ---------------------------------------------------------------------------
+# Parameter grid
+#
+# The script will generate HODs at every combination of the values listed
+# here (a full Cartesian grid). Edit the lists to change the range or
+# density of the scan.
+#
+# Default: 20 × 10 × 5 = 1 000 HOD runs
+# ---------------------------------------------------------------------------
+param_grid:
+    # log10 of the minimum halo mass for QSO centrals [log10 Msun/h]
+    logM_cut:
+        - 11.5
+        - 11.61
+        - 11.72
+        - 11.83
+        - 11.94
+        - 12.06
+        - 12.17
+        - 12.28
+        - 12.39
+        - 12.50
+        - 12.61
+        - 12.72
+        - 12.83
+        - 12.94
+        - 13.06
+        - 13.17
+        - 13.28
+        - 13.39
+        - 13.50
+        - 13.61
+
+    # width of the central occupation step function
+    sigma:
+        - 0.10
+        - 0.26
+        - 0.41
+        - 0.57
+        - 0.73
+        - 0.88
+        - 1.04
+        - 1.20
+        - 1.35
+        - 1.50
+
+    # maximum central occupation probability
+    p_max:
+        - 0.05
+        - 0.16
+        - 0.27
+        - 0.39
+        - 0.50
+
+
+# ---------------------------------------------------------------------------
+# Clustering parameters
+# (Not used during catalog generation, but required by the AbacusHOD
+# constructor. These defaults are fine to leave as-is.)
+# ---------------------------------------------------------------------------
+clustering_params:
+    clustering_type: 'xirppi'
+    bin_params:
+        logmin: -0.77288    # log10(r_min / [Mpc/h])
+        logmax:  1.47712    # log10(r_max / [Mpc/h])
+        nbins: 8
+    pimax: 30
+    pi_bin_size: 5

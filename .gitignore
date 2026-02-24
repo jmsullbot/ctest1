@@ -1,3 +1,8 @@
+# Generated output (HDF5 catalogs, simulation subsamples)
+output/
+*.hdf5
+*.hdf
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
