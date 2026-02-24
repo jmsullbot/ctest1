@@ -1,0 +1,140 @@
+# AbacusHOD configuration for QSO HOD sample generation
+#
+# Fill in the paths under sim_params before running. The simulation data is
+# NOT in this repository — point these paths at wherever you have the
+# AbacusSummit boxes stored.
+#
+# CAREFUL: YAML is sensitive to indentation — use spaces, not tabs.
+
+
+# ---------------------------------------------------------------------------
+# Simulation parameters
+# ---------------------------------------------------------------------------
+sim_params:
+    sim_name: 'AbacusSummit_base_c000_ph000'    # which AbacusSummit box to use
+    sim_dir: '/path/to/AbacusSummit/'            # directory containing the simulation
+    output_dir: '/path/to/output/mocks/'         # galaxy mock output (if write_to_disk=True)
+    subsample_dir: '/path/to/output/subsample/'  # where prepare_sim writes/reads subsampled halos
+    z_mock: 1.1                                  # redshift snapshot (QSOs: typically z ~ 0.8–2.1)
+    cleaned_halos: True                          # use cleaned halo catalogs (recommended)
+
+
+# ---------------------------------------------------------------------------
+# prepare_sim settings  (used only when running with --prepare_sim)
+# ---------------------------------------------------------------------------
+prepare_sim:
+    Nparallel_load: 5           # parallel processes; peak memory scales with this
+    Nthread_per_load: 'auto'    # threads per process ('auto' uses the CPU affinity mask)
+
+
+# ---------------------------------------------------------------------------
+# HOD parameters
+# ---------------------------------------------------------------------------
+HOD_params:
+    want_ranks: False           # satellite profile flexibilities (rank-ordered by Vmax etc.)
+    want_AB: False              # assembly bias (A/Bcent/Asat/Bsat are 0 anyway)
+    density_sigma: 3            # scale radius [Mpc/h] for local density environment
+    want_rsd: True              # include redshift-space distortions
+    write_to_disk: False        # write individual catalogs to output_dir (slow; keep False)
+
+    tracer_flags:
+        LRG: False
+        ELG: False
+        QSO: True
+
+    # Placeholder QSO params used only to initialise AbacusHOD.
+    # The script overwrites the 8 varied params at each sample point.
+    # p_max is not set here; it is derived from log10_f_ic at run time
+    # as  p_max = 10**log10_f_ic.
+    QSO_params:
+
+        # rank-based satellite profile (only active if want_ranks=True)
+        s:        0.0
+        s_v:      0.0
+        s_p:      0.0
+        s_r:      0.0
+
+        # assembly bias (only active if want_AB=True)
+        Acent:    0.0
+        Asat:     0.0
+        Bcent:    0.0
+        Bsat:     0.0
+
+        # incompleteness correction
+        ic:       1.0
+
+        # --- varied params: placeholder values (overwritten per sample) ---
+        log10_f_ic: -1.35   # log10(f_ic); converted to p_max = 10**log10_f_ic
+        logM_cut: 12.7
+        logM1:    15.0
+        sigma:     0.5
+        alpha:     1.0
+        kappa:     0.5
+        alpha_c:   1.5
+        alpha_s:   0.2
+
+
+# ---------------------------------------------------------------------------
+# Parameter space
+#
+# Priors and bounds from Table II of Yuan et al. 2023 (arXiv:2306.06314),
+# QSO column.  Units of mass are log10(h^-1 M_sun).
+#
+# sampling: 'lhs'   – Latin Hypercube Sampling, uniform within bounds
+#                     (recommended for emulator training; gives the best
+#                     coverage of the parameter space for a given N)
+#           'prior' – truncated-Gaussian draws matching the paper priors
+#                     (useful if you want samples weighted like a posterior)
+#
+# n_samples: total number of HOD runs to generate
+# seed:      random seed for reproducibility
+# ---------------------------------------------------------------------------
+param_space:
+    n_samples: 1000
+    sampling: 'lhs'
+    seed: 42
+
+    # Each entry:
+    #   prior:  [mean, std]  of the Gaussian prior  N(mean, std)
+    #   bounds: [lo,   hi]   hard bounds (LHS samples uniformly in this range;
+    #                         'prior' samples use a truncated Gaussian)
+    params:
+        logM_cut:
+            prior:  [12.7, 1.0]
+            bounds: [11.2, 14.0]
+        logM1:
+            prior:  [15.0, 1.0]
+            bounds: [12.0, 16.0]
+        sigma:
+            prior:  [0.5, 0.5]
+            bounds: [0.0, 3.0]
+        alpha:
+            prior:  [1.0, 0.5]
+            bounds: [0.3, 2.0]
+        kappa:
+            prior:  [0.5, 0.5]
+            bounds: [0.3, 3.0]
+        alpha_c:
+            prior:  [1.5, 1.0]
+            bounds: [0.0, 2.0]
+        alpha_s:
+            prior:  [0.2, 1.0]
+            bounds: [0.0, 2.0]
+        log10_f_ic:
+            prior:  [-1.35, 0.5]    # log10(f_ic); Yuan+23 QSO posterior, Fig 12
+            bounds: [-2.1, -0.6]    # 10^-2.1 ≈ 0.008  …  10^-0.6 ≈ 0.25
+
+
+# ---------------------------------------------------------------------------
+# Clustering parameters
+# (Not used during catalog generation but required by the AbacusHOD
+# constructor. The defaults below are fine to leave as-is.)
+# ---------------------------------------------------------------------------
+clustering_params:
+    clustering_type: 'xirppi'
+    bin_params:
+        logmin: -0.77288    # log10(r_min / [Mpc/h])
+        logmax:  1.47712    # log10(r_max / [Mpc/h])
+        nbins: 8
+    pimax: 30
+    pi_bin_size: 5
