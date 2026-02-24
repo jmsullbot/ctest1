@@ -168,7 +168,14 @@ functions).
 
 ## Output format
 
-One HDF5 file containing all catalogs:
+Two files are written automatically with the same base name:
+
+| File | Best for |
+|------|----------|
+| `qso_hods.hdf5` | Random access to individual runs; preserves all metadata |
+| `qso_hods.npz`  | Quick load into NumPy arrays; no h5py dependency |
+
+### HDF5 layout
 
 ```
 qso_hods.hdf5
@@ -197,14 +204,53 @@ qso_hods.hdf5
     └── …
 ```
 
+### NPZ layout
+
+All galaxy-level arrays are **concatenated across runs**.  The `offsets` array
+marks run boundaries: run `i` occupies `offsets[i] : offsets[i+1]`.
+
+```
+qso_hods.npz
+├── params       [n_runs × 8]   HOD parameter matrix
+├── n_gal        [n_runs]       galaxy count per run
+├── param_names  [8]            column labels for params
+├── offsets      [n_runs + 1]   cumulative n_gal (boundary indices)
+├── x            [total_gal]    comoving x  [Mpc/h]  ← all runs concatenated
+├── y, z         [total_gal]    comoving y, z
+├── vx, vy, vz   [total_gal]    peculiar velocities [km/s]
+├── mass         [total_gal]    host halo mass [M☉/h]
+├── id           [total_gal]    host halo id
+└── Ncent        [total_gal]    1 = central, 0 = satellite  (if present)
+```
+
 ### Reading the output
+
+**NumPy (NPZ):**
+
+```python
+import numpy as np
+
+data = np.load("output/qso_hods.npz")
+
+# Parameter table and counts
+params      = data["params"]       # shape (n_runs, 8)
+param_names = list(data["param_names"])
+n_gal       = data["n_gal"]
+offsets     = data["offsets"]
+
+# Slice out a single run
+i  = 42
+sl = slice(offsets[i], offsets[i + 1])
+x, y, z = data["x"][sl], data["y"][sl], data["z"][sl]
+```
+
+**HDF5:**
 
 ```python
 import h5py
 import numpy as np
 
 with h5py.File("output/qso_hods.hdf5", "r") as f:
-    # Parameter table and galaxy counts
     params = f["params"][:]        # shape (n_runs, 8)
     cols   = list(f["params"].attrs["columns"])
     n_gal  = f["n_gal"][:]
@@ -213,7 +259,6 @@ with h5py.File("output/qso_hods.hdf5", "r") as f:
     idx = np.argmin(np.abs(params[:, cols.index("logM_cut")] - 12.5))
     print(f"Run {idx}: logM_cut={params[idx, 0]:.3f}, N_QSO={n_gal[idx]}")
 
-    # Load its catalog
     cat = f[f"catalogs/{idx:06d}"]
     x, y, z = cat["x"][:], cat["y"][:], cat["z"][:]
 ```

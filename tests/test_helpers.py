@@ -22,6 +22,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from compute_number_density import compute_number_densities
+from generate_qso_hods import _CATALOG_FIELDS, _write_npz
 from plot_occupation import n_cen, n_sat, plot_occupation
 
 
@@ -243,3 +244,74 @@ def test_plot_occupation_multiple_param_sets():
     # 2 param sets × 3 lines (tot, cen, sat) = 6 lines
     assert len(ax.lines) == 6
     plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# _write_npz round-trip tests
+# ---------------------------------------------------------------------------
+
+def _make_cat_accum(n_gals_per_run: list[int], seed: int = 7):
+    """Build a cat_accum dict matching the structure generate_hod_samples produces."""
+    rng = np.random.default_rng(seed)
+    cat_accum = {field: [] for field in _CATALOG_FIELDS}
+    for ng in n_gals_per_run:
+        for field in _CATALOG_FIELDS:
+            if ng > 0:
+                if field in ("id", "Ncent"):
+                    arr = rng.integers(0, 1000, size=ng)
+                else:
+                    arr = rng.random(ng).astype(np.float32)
+                cat_accum[field].append(arr)
+            else:
+                cat_accum[field].append(np.array([]))
+    return cat_accum
+
+
+def test_write_npz_round_trip(tmp_path):
+    """_write_npz: written data reads back identically."""
+    n_runs = 4
+    n_gals_per_run = [5, 0, 3, 7]  # run 1 is intentionally empty
+    rng     = np.random.default_rng(0)
+    samples = rng.random((n_runs, len(PARAM_NAMES)))
+    n_gals  = np.array(n_gals_per_run, dtype=np.int64)
+    cat_acc = _make_cat_accum(n_gals_per_run)
+
+    npz_path = tmp_path / "test.npz"
+    _write_npz(npz_path, samples, n_gals, PARAM_NAMES, cat_acc)
+
+    data = np.load(npz_path)
+
+    # --- metadata ---
+    np.testing.assert_array_equal(data["params"], samples)
+    np.testing.assert_array_equal(data["n_gal"], n_gals)
+    assert list(data["param_names"]) == PARAM_NAMES
+
+    # --- offsets ---
+    expected_offsets = np.array([0, 5, 5, 8, 15], dtype=np.int64)
+    np.testing.assert_array_equal(data["offsets"], expected_offsets)
+
+    # --- per-run slicing ---
+    for run_i, ng in enumerate(n_gals_per_run):
+        sl = slice(int(data["offsets"][run_i]), int(data["offsets"][run_i + 1]))
+        expected_x = cat_acc["x"][run_i]
+        if ng > 0:
+            np.testing.assert_array_equal(data["x"][sl], expected_x)
+        else:
+            assert sl.stop - sl.start == 0
+
+
+def test_write_npz_all_empty(tmp_path):
+    """All-empty runs should produce empty catalog arrays and monotone offsets."""
+    n_runs  = 3
+    samples = np.zeros((n_runs, len(PARAM_NAMES)))
+    n_gals  = np.zeros(n_runs, dtype=np.int64)
+    cat_acc = _make_cat_accum([0, 0, 0])
+
+    npz_path = tmp_path / "empty.npz"
+    _write_npz(npz_path, samples, n_gals, PARAM_NAMES, cat_acc)
+
+    data = np.load(npz_path)
+    np.testing.assert_array_equal(data["offsets"], np.zeros(n_runs + 1, dtype=np.int64))
+    # No catalog arrays should be present (all were empty)
+    for field in _CATALOG_FIELDS:
+        assert field not in data
