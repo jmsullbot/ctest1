@@ -22,7 +22,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from compute_number_density import compute_number_densities
-from generate_qso_hods import _CATALOG_FIELDS, _OM_ABACUS, _compute_z_rsd, _write_npz
+from generate_qso_hods import _CATALOG_FIELDS, _OM_ABACUS, _compute_z_rsd, _save_catalog_npy
 from plot_occupation import n_cen, n_sat, plot_occupation
 
 
@@ -289,91 +289,62 @@ def test_z_rsd_negative_velocity():
 
 
 # ---------------------------------------------------------------------------
-# _write_npz round-trip tests
+# _save_catalog_npy round-trip tests
 # ---------------------------------------------------------------------------
 
-def _make_cat_accum(n_gals_per_run: list[int], seed: int = 7, with_z_rsd: bool = False):
-    """Build a cat_accum dict matching the structure generate_hod_samples produces."""
+def _make_qso_cat(n_gal: int, seed: int = 7) -> dict:
+    """Build a minimal qso_cat dict matching what AbacusHOD returns."""
     rng = np.random.default_rng(seed)
-    fields = (*_CATALOG_FIELDS, "z_rsd") if with_z_rsd else _CATALOG_FIELDS
-    cat_accum = {field: [] for field in fields}
-    for ng in n_gals_per_run:
-        for field in fields:
-            if ng > 0:
-                if field in ("id", "Ncent"):
-                    arr = rng.integers(0, 1000, size=ng)
-                else:
-                    arr = rng.random(ng).astype(np.float32)
-                cat_accum[field].append(arr)
-            else:
-                cat_accum[field].append(np.array([]))
-    return cat_accum
-
-
-def test_write_npz_round_trip(tmp_path):
-    """_write_npz: written data reads back identically."""
-    n_runs = 4
-    n_gals_per_run = [5, 0, 3, 7]  # run 1 is intentionally empty
-    rng     = np.random.default_rng(0)
-    samples = rng.random((n_runs, len(PARAM_NAMES)))
-    n_gals  = np.array(n_gals_per_run, dtype=np.int64)
-    cat_acc = _make_cat_accum(n_gals_per_run)
-
-    npz_path = tmp_path / "test.npz"
-    _write_npz(npz_path, samples, n_gals, PARAM_NAMES, cat_acc)
-
-    data = np.load(npz_path)
-
-    # --- metadata ---
-    np.testing.assert_array_equal(data["params"], samples)
-    np.testing.assert_array_equal(data["n_gal"], n_gals)
-    assert list(data["param_names"]) == PARAM_NAMES
-
-    # --- offsets ---
-    expected_offsets = np.array([0, 5, 5, 8, 15], dtype=np.int64)
-    np.testing.assert_array_equal(data["offsets"], expected_offsets)
-
-    # --- per-run slicing ---
-    for run_i, ng in enumerate(n_gals_per_run):
-        sl = slice(int(data["offsets"][run_i]), int(data["offsets"][run_i + 1]))
-        expected_x = cat_acc["x"][run_i]
-        if ng > 0:
-            np.testing.assert_array_equal(data["x"][sl], expected_x)
-        else:
-            assert sl.stop - sl.start == 0
-
-
-def test_write_npz_with_z_rsd(tmp_path):
-    """z_rsd column is stored and slices correctly when provided."""
-    n_gals_per_run = [4, 6]
-    rng     = np.random.default_rng(1)
-    samples = rng.random((2, len(PARAM_NAMES)))
-    n_gals  = np.array(n_gals_per_run, dtype=np.int64)
-    cat_acc = _make_cat_accum(n_gals_per_run, with_z_rsd=True)
-
-    npz_path = tmp_path / "rsd.npz"
-    _write_npz(npz_path, samples, n_gals, PARAM_NAMES, cat_acc)
-
-    data = np.load(npz_path)
-    assert "z_rsd" in data
-
-    for run_i, ng in enumerate(n_gals_per_run):
-        sl = slice(int(data["offsets"][run_i]), int(data["offsets"][run_i + 1]))
-        np.testing.assert_array_equal(data["z_rsd"][sl], cat_acc["z_rsd"][run_i])
-
-
-def test_write_npz_all_empty(tmp_path):
-    """All-empty runs should produce empty catalog arrays and monotone offsets."""
-    n_runs  = 3
-    samples = np.zeros((n_runs, len(PARAM_NAMES)))
-    n_gals  = np.zeros(n_runs, dtype=np.int64)
-    cat_acc = _make_cat_accum([0, 0, 0])
-
-    npz_path = tmp_path / "empty.npz"
-    _write_npz(npz_path, samples, n_gals, PARAM_NAMES, cat_acc)
-
-    data = np.load(npz_path)
-    np.testing.assert_array_equal(data["offsets"], np.zeros(n_runs + 1, dtype=np.int64))
-    # No catalog arrays should be present (all were empty)
+    if n_gal == 0:
+        return {field: np.array([], dtype=np.float32) for field in _CATALOG_FIELDS}
+    cat = {}
     for field in _CATALOG_FIELDS:
-        assert field not in data
+        if field == "id":
+            cat[field] = rng.integers(0, int(1e9), size=n_gal)
+        elif field == "Ncent":
+            cat[field] = rng.integers(0, 2, size=n_gal)
+        else:
+            cat[field] = rng.random(n_gal).astype(np.float32)
+    return cat
+
+
+def test_save_catalog_npy_round_trip(tmp_path):
+    """_save_catalog_npy: written data reads back identically."""
+    n_gal = 50
+    cat   = _make_qso_cat(n_gal)
+    path  = tmp_path / "000000.npy"
+
+    _save_catalog_npy(path, cat, z_rsd_arr=None)
+
+    out = np.load(path)
+    assert out.shape == (n_gal,)
+    for field in _CATALOG_FIELDS:
+        np.testing.assert_array_equal(out[field], cat[field])
+    assert "z_rsd" not in out.dtype.names
+
+
+def test_save_catalog_npy_with_z_rsd(tmp_path):
+    """z_rsd is stored and appears immediately after z in the structured dtype."""
+    n_gal     = 30
+    cat       = _make_qso_cat(n_gal, seed=3)
+    z_rsd_arr = cat["z"] + np.random.default_rng(99).random(n_gal).astype(np.float32)
+    path      = tmp_path / "000001.npy"
+
+    _save_catalog_npy(path, cat, z_rsd_arr=z_rsd_arr)
+
+    out = np.load(path)
+    assert "z_rsd" in out.dtype.names
+    np.testing.assert_array_equal(out["z_rsd"], z_rsd_arr)
+    names = out.dtype.names
+    assert names.index("z_rsd") == names.index("z") + 1
+
+
+def test_save_catalog_npy_empty(tmp_path):
+    """Empty catalog (n_gal=0) saves without error and loads as empty array."""
+    cat  = _make_qso_cat(0)
+    path = tmp_path / "empty.npy"
+
+    _save_catalog_npy(path, cat, z_rsd_arr=None)
+
+    out = np.load(path)
+    assert len(out) == 0

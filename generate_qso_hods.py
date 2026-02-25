@@ -39,10 +39,10 @@ Generate HOD catalogs:
 
 Output files
 ------------
-Two files are written automatically with the same base name:
-
-    output/qso_hods.hdf5   – structured HDF5 (random-access per run)
-    output/qso_hods.npz    – flat NumPy archive (easy to load without h5py)
+    output/qso_hods.hdf5        – structured HDF5 (all runs; random-access per run)
+    output/catalogs/000000.npy  – per-run structured NumPy array, one file per HOD run
+    output/catalogs/000001.npy
+    …
 
 HDF5 layout
 -----------
@@ -72,23 +72,20 @@ HDF5 layout
         │   └── id         [n_gal]  host halo id
         └── …
 
-NPZ layout  (load with np.load("qso_hods.npz"))
-----------
-    params       [n_runs × 8]        HOD parameter matrix
-    n_gal        [n_runs]            galaxy count per run
-    param_names  [8]                 column names for params
-    offsets      [n_runs + 1]        cumulative galaxy counts;
-                                     run i spans offsets[i] : offsets[i+1]
-    x            [total_gal]         comoving x     [Mpc/h]  (real-space; all runs concat.)
-    y            [total_gal]         comoving y     [Mpc/h]  (real-space)
-    z            [total_gal]         comoving z     [Mpc/h]  (real-space)
-    z_rsd        [total_gal]         redshift-space z [Mpc/h] (only if want_rsd=True)
-    vx           [total_gal]         peculiar vx    [km/s]
-    vy           [total_gal]         peculiar vy    [km/s]
-    vz           [total_gal]         peculiar vz    [km/s]
-    mass         [total_gal]         host halo mass [Msun/h]
-    id           [total_gal]         host halo id
-    Ncent        [total_gal]         1 if central, 0 if satellite  (if present)
+Per-catalog .npy layout  (load with np.load("catalogs/000042.npy"))
+-----------------------
+Each file is a 1-D structured NumPy array with one element per galaxy.
+Fields (in order):
+    x       comoving x        [Mpc/h]   real-space
+    y       comoving y        [Mpc/h]   real-space
+    z       comoving z        [Mpc/h]   real-space
+    z_rsd   redshift-space z  [Mpc/h]   only present when want_rsd=True
+    vx      peculiar vx       [km/s]
+    vy      peculiar vy       [km/s]
+    vz      peculiar vz       [km/s]
+    mass    host halo mass    [Msun/h]
+    id      host halo id
+    Ncent   1 = central, 0 = satellite
 """
 
 import argparse
@@ -156,36 +153,40 @@ def _to_abacus_params(params_i: dict) -> dict:
     return out
 
 
-def _write_npz(
-    npz_path: Path,
-    samples: np.ndarray,
-    n_gals: np.ndarray,
-    param_names: list[str],
-    cat_accum: dict[str, list],
+def _save_catalog_npy(
+    npy_path: Path,
+    qso_cat: dict,
+    z_rsd_arr: np.ndarray | None,
 ) -> None:
-    """Write the flat NumPy companion file.
+    """Save one HOD catalog run to a structured NumPy .npy file.
 
-    Catalog fields from all runs are concatenated into 1-D arrays.  Use the
-    ``offsets`` array to slice out a single run::
+    The output is a 1-D structured array with one element per galaxy.
+    Fields follow the order defined in ``_CATALOG_FIELDS``, with ``z_rsd``
+    inserted immediately after ``z`` when provided.
 
-        data    = np.load("qso_hods.npz")
-        i       = 42
-        sl      = slice(data["offsets"][i], data["offsets"][i + 1])
-        x_run_i = data["x"][sl]
+    Load with::
+
+        cat = np.load("catalogs/000042.npy")
+        x   = cat["x"]      # positions [Mpc/h]
+        vz  = cat["vz"]     # velocities [km/s]
     """
-    offsets = np.concatenate([[0], np.cumsum(n_gals)])
-    npz_data: dict = {
-        "params":      samples.astype(np.float64),
-        "n_gal":       n_gals,
-        "param_names": np.array(param_names),
-        "offsets":     offsets,
-    }
-    for field, pieces in cat_accum.items():
-        non_empty = [np.asarray(p) for p in pieces if len(p) > 0]
-        if non_empty:
-            npz_data[field] = np.concatenate(non_empty)
-    np.savez_compressed(npz_path, **npz_data)
-    print(f"NPZ    : {npz_path}  ({npz_path.stat().st_size / 1e9:.2f} GB)")
+    dtype_fields: list[tuple[str, np.dtype]] = []
+    for field in _CATALOG_FIELDS:
+        arr = qso_cat.get(field)
+        if arr is not None:
+            dtype_fields.append((field, np.asarray(arr).dtype))
+        if field == "z" and z_rsd_arr is not None:
+            dtype_fields.append(("z_rsd", z_rsd_arr.dtype))
+
+    if not dtype_fields:
+        np.save(npy_path, np.empty(0, dtype=np.float32))
+        return
+
+    n_gal = len(np.asarray(qso_cat[dtype_fields[0][0]]))
+    out   = np.empty(n_gal, dtype=np.dtype(dtype_fields))
+    for name, _ in dtype_fields:
+        out[name] = z_rsd_arr if name == "z_rsd" else qso_cat[name]
+    np.save(npy_path, out)
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +330,8 @@ def generate_hod_samples(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     n_gals       = np.zeros(n_runs, dtype=np.int64)
-    cat_accum    = {field: [] for field in (*_CATALOG_FIELDS, "z_rsd")}
+    npy_dir      = out_path.parent / "catalogs"
+    npy_dir.mkdir(exist_ok=True)
     log_interval = max(1, n_runs // 50)   # ~50 progress lines total
 
     # Column header for progress output
@@ -415,15 +417,11 @@ def generate_hod_samples(
                 arr = qso_cat.get(field)
                 if arr is not None and len(arr) > 0:
                     grp.create_dataset(field, data=arr, compression="lzf")
-                    cat_accum[field].append(np.asarray(arr))
-                else:
-                    cat_accum[field].append(np.array([]))
 
             if z_rsd_arr is not None:
                 grp.create_dataset("z_rsd", data=z_rsd_arr, compression="lzf")
-                cat_accum["z_rsd"].append(z_rsd_arr)
-            else:
-                cat_accum["z_rsd"].append(np.array([]))
+
+            _save_catalog_npy(npy_dir / f"{i:06d}.npy", qso_cat, z_rsd_arr)
 
             if i == 0 or (i + 1) % log_interval == 0 or i == n_runs - 1:
                 vals_str = "  ".join(f"{v:{col_w}.4f}" for v in row)
@@ -435,8 +433,7 @@ def generate_hod_samples(
     print(f"N_QSO  min={n_gals.min()}  max={n_gals.max()}  "
           f"median={int(np.median(n_gals))}")
     print(f"HDF5   : {out_path}  ({out_path.stat().st_size / 1e9:.2f} GB)")
-
-    _write_npz(out_path.with_suffix(".npz"), samples, n_gals, param_names, cat_accum)
+    print(f"NPY    : {npy_dir}/  ({n_runs} files)")
 
 
 # ---------------------------------------------------------------------------

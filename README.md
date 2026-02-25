@@ -168,12 +168,12 @@ functions).
 
 ## Output format
 
-Two files are written automatically with the same base name:
+Two outputs are written automatically:
 
-| File | Best for |
-|------|----------|
+| Output | Best for |
+|--------|----------|
 | `qso_hods.hdf5` | Random access to individual runs; preserves all metadata |
-| `qso_hods.npz`  | Quick load into NumPy arrays; no h5py dependency |
+| `catalogs/NNNNNN.npy` | Fast per-run structured NumPy arrays; no h5py dependency |
 
 ### HDF5 layout
 
@@ -205,45 +205,38 @@ qso_hods.hdf5
     └── …
 ```
 
-### NPZ layout
+### Per-catalog `.npy` layout
 
-All galaxy-level arrays are **concatenated across runs**.  The `offsets` array
-marks run boundaries: run `i` occupies `offsets[i] : offsets[i+1]`.
+One file per HOD run, written to `output/catalogs/` immediately after each run
+completes.  Each file is a **1-D structured NumPy array** (one element per galaxy):
 
 ```
-qso_hods.npz
-├── params       [n_runs × 8]   HOD parameter matrix
-├── n_gal        [n_runs]       galaxy count per run
-├── param_names  [8]            column labels for params
-├── offsets      [n_runs + 1]   cumulative n_gal (boundary indices)
-├── x            [total_gal]    comoving x       [Mpc/h]  real-space; all runs concatenated
-├── y, z         [total_gal]    comoving y, z    [Mpc/h]  real-space
-├── z_rsd        [total_gal]    redshift-space z [Mpc/h]  only present if want_rsd=True
-├── vx, vy, vz   [total_gal]    peculiar velocities [km/s]
-├── mass         [total_gal]    host halo mass [M☉/h]
-├── id           [total_gal]    host halo id
-└── Ncent        [total_gal]    1 = central, 0 = satellite  (if present)
+catalogs/000042.npy   (load with cat = np.load("catalogs/000042.npy"))
+└── structured array, fields:
+    x       [n_gal]   comoving x        [Mpc/h]  real-space
+    y       [n_gal]   comoving y        [Mpc/h]  real-space
+    z       [n_gal]   comoving z        [Mpc/h]  real-space
+    z_rsd   [n_gal]   redshift-space z  [Mpc/h]  only if want_rsd=True
+    vx      [n_gal]   peculiar vx       [km/s]
+    vy      [n_gal]   peculiar vy       [km/s]
+    vz      [n_gal]   peculiar vz       [km/s]
+    mass    [n_gal]   host halo mass    [M☉/h]
+    id      [n_gal]   host halo id
+    Ncent   [n_gal]   1 = central, 0 = satellite
 ```
 
 ### Reading the output
 
-**NumPy (NPZ):**
+**NumPy (per-run `.npy`):**
 
 ```python
 import numpy as np
 
-data = np.load("output/qso_hods.npz")
+cat = np.load("output/catalogs/000042.npy")
 
-# Parameter table and counts
-params      = data["params"]       # shape (n_runs, 8)
-param_names = list(data["param_names"])
-n_gal       = data["n_gal"]
-offsets     = data["offsets"]
-
-# Slice out a single run
-i  = 42
-sl = slice(offsets[i], offsets[i + 1])
-x, y, z = data["x"][sl], data["y"][sl], data["z"][sl]
+x, y, z = cat["x"], cat["y"], cat["z"]
+z_rsd   = cat["z_rsd"]   # redshift-space z (if want_rsd=True)
+mass    = cat["mass"]
 ```
 
 **HDF5:**
