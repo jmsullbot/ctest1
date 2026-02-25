@@ -15,7 +15,7 @@ sim_params:
     sim_dir: '/path/to/AbacusSummit/'            # directory containing the simulation
     output_dir: '/path/to/output/mocks/'         # galaxy mock output (if write_to_disk=True)
     subsample_dir: '/path/to/output/subsample/'  # where prepare_sim writes/reads subsampled halos
-    z_mock: 1.1                                  # redshift snapshot (QSOs: typically z ~ 0.8–2.1)
+    z_mock: 1.4                                  # redshift snapshot (QSOs: typically z ~ 0.8–2.1)
     cleaned_halos: True                          # use cleaned halo catalogs (recommended)
 
 

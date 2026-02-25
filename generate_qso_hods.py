@@ -61,9 +61,10 @@ HDF5 layout
         ├── 000000/
         │   ├── attrs      logM_cut, logM1, sigma, alpha, kappa,
         │   |               alpha_c, alpha_s, log10_f_ic, n_gal
-        │   ├── x          [n_gal]  comoving x  [Mpc/h]
-        │   ├── y          [n_gal]  comoving y  [Mpc/h]
-        │   ├── z          [n_gal]  comoving z  [Mpc/h]
+        │   ├── x          [n_gal]  comoving x  [Mpc/h]  (real-space)
+        │   ├── y          [n_gal]  comoving y  [Mpc/h]  (real-space)
+        │   ├── z          [n_gal]  comoving z  [Mpc/h]  (real-space)
+        │   ├── z_rsd      [n_gal]  redshift-space z [Mpc/h]  (only if want_rsd)
         │   ├── vx         [n_gal]  peculiar vx [km/s]
         │   ├── vy         [n_gal]  peculiar vy [km/s]
         │   ├── vz         [n_gal]  peculiar vz [km/s]
@@ -78,12 +79,13 @@ NPZ layout  (load with np.load("qso_hods.npz"))
     param_names  [8]                 column names for params
     offsets      [n_runs + 1]        cumulative galaxy counts;
                                      run i spans offsets[i] : offsets[i+1]
-    x            [total_gal]         comoving x  [Mpc/h]  (all runs concat.)
-    y            [total_gal]         comoving y  [Mpc/h]
-    z            [total_gal]         comoving z  [Mpc/h]
-    vx           [total_gal]         peculiar vx [km/s]
-    vy           [total_gal]         peculiar vy [km/s]
-    vz           [total_gal]         peculiar vz [km/s]
+    x            [total_gal]         comoving x     [Mpc/h]  (real-space; all runs concat.)
+    y            [total_gal]         comoving y     [Mpc/h]  (real-space)
+    z            [total_gal]         comoving z     [Mpc/h]  (real-space)
+    z_rsd        [total_gal]         redshift-space z [Mpc/h] (only if want_rsd=True)
+    vx           [total_gal]         peculiar vx    [km/s]
+    vy           [total_gal]         peculiar vy    [km/s]
+    vz           [total_gal]         peculiar vz    [km/s]
     mass         [total_gal]         host halo mass [Msun/h]
     id           [total_gal]         host halo id
     Ncent        [total_gal]         1 if central, 0 if satellite  (if present)
@@ -116,6 +118,30 @@ FIXED_PARAMS: dict = {
 }
 
 _CATALOG_FIELDS = ("x", "y", "z", "vx", "vy", "vz", "mass", "id", "Ncent")
+
+
+# AbacusSummit Planck-2018 flat ΛCDM cosmology (used for RSD conversion)
+_OM_ABACUS = 0.315192
+
+
+def _compute_z_rsd(
+    z: np.ndarray,
+    vz: np.ndarray,
+    z_mock: float,
+    Om: float = _OM_ABACUS,
+) -> np.ndarray:
+    """Compute plane-parallel redshift-space z-coordinate.
+
+    Uses flat ΛCDM (default: AbacusSummit Planck-2018, Ω_m = 0.315192).
+    No periodic wrapping is applied.
+
+        z_rsd = z_real + v_z / (H(z_mock) / (1 + z_mock))
+
+    where H(z) [km/s/(Mpc/h)] = 100 · sqrt(Ω_m (1+z)³ + Ω_Λ).
+    """
+    E_z = np.sqrt(Om * (1.0 + z_mock) ** 3 + (1.0 - Om))
+    H_over_1pz = 100.0 * E_z / (1.0 + z_mock)   # km/s / (Mpc/h)
+    return z + vz / H_over_1pz
 
 
 def _to_abacus_params(params_i: dict) -> dict:
@@ -264,8 +290,10 @@ def generate_hod_samples(
     clustering_params = config.get("clustering_params", {})
 
     HOD_params["tracer_flags"]   = {"LRG": False, "ELG": False, "QSO": True}
-    HOD_params["want_rsd"]       = want_rsd
+    HOD_params["want_rsd"]       = False   # always get real-space; z_rsd computed below
     HOD_params["write_to_disk"]  = False
+
+    z_mock = float(sim_params.get("z_mock", -1.0))
 
     # Draw parameter samples
     param_names, samples = _draw_samples(config)
@@ -294,14 +322,14 @@ def generate_hod_samples(
 
     # Warm-up run to trigger JIT compilation before timing
     print("Warm-up run (JIT compilation)…")
-    _ = ball.run_hod(ball.tracers, want_rsd, write_to_disk=False, Nthread=Nthread)
+    _ = ball.run_hod(ball.tracers, False, write_to_disk=False, Nthread=Nthread)
     print("Done.\n")
 
     out_path = Path(output_file)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     n_gals       = np.zeros(n_runs, dtype=np.int64)
-    cat_accum    = {field: [] for field in _CATALOG_FIELDS}
+    cat_accum    = {field: [] for field in (*_CATALOG_FIELDS, "z_rsd")}
     log_interval = max(1, n_runs // 50)   # ~50 progress lines total
 
     # Column header for progress output
@@ -320,7 +348,7 @@ def generate_hod_samples(
         hf.attrs["seed"]        = int(ps.get("seed", 42))
         hf.attrs["want_rsd"]    = want_rsd
         hf.attrs["sim_name"]    = sim_params.get("sim_name", "unknown")
-        hf.attrs["z_mock"]      = float(sim_params.get("z_mock", -1.0))
+        hf.attrs["z_mock"]      = z_mock
 
         # Prior / bounds metadata
         grp_ps = hf.create_group("param_space")
@@ -355,7 +383,7 @@ def generate_hod_samples(
             t_run = time.time()
             mock_dict = ball.run_hod(
                 ball.tracers,
-                want_rsd,
+                False,
                 write_to_disk=False,
                 Nthread=Nthread,
                 verbose=verbose,
@@ -366,6 +394,16 @@ def generate_hod_samples(
             n_gal   = int(len(qso_cat.get("x", [])))
             n_gals[i]  = n_gal
             ds_ngal[i] = n_gal
+
+            # Compute z_rsd from real-space positions + velocities
+            z_rsd_arr: np.ndarray | None = None
+            if want_rsd and n_gal > 0:
+                _z  = qso_cat.get("z")
+                _vz = qso_cat.get("vz")
+                if _z is not None and _vz is not None:
+                    z_rsd_arr = _compute_z_rsd(
+                        np.asarray(_z), np.asarray(_vz), z_mock
+                    )
 
             # Write catalog group
             grp = grp_cats.create_group(f"{i:06d}")
@@ -380,6 +418,12 @@ def generate_hod_samples(
                     cat_accum[field].append(np.asarray(arr))
                 else:
                     cat_accum[field].append(np.array([]))
+
+            if z_rsd_arr is not None:
+                grp.create_dataset("z_rsd", data=z_rsd_arr, compression="lzf")
+                cat_accum["z_rsd"].append(z_rsd_arr)
+            else:
+                cat_accum["z_rsd"].append(np.array([]))
 
             if i == 0 or (i + 1) % log_interval == 0 or i == n_runs - 1:
                 vals_str = "  ".join(f"{v:{col_w}.4f}" for v in row)
