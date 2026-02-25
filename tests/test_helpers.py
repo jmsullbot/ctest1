@@ -301,8 +301,6 @@ def _make_qso_cat(n_gal: int, seed: int = 7) -> dict:
     for field in _CATALOG_FIELDS:
         if field == "id":
             cat[field] = rng.integers(0, int(1e9), size=n_gal)
-        elif field == "Ncent":
-            cat[field] = rng.integers(0, 2, size=n_gal)
         else:
             cat[field] = rng.random(n_gal).astype(np.float32)
     return cat

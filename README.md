@@ -222,7 +222,6 @@ catalogs/000042.npy   (load with cat = np.load("catalogs/000042.npy"))
     vz      [n_gal]   peculiar vz       [km/s]
     mass    [n_gal]   host halo mass    [M☉/h]
     id      [n_gal]   host halo id
-    Ncent   [n_gal]   1 = central, 0 = satellite
 ```
 
 ### Reading the output

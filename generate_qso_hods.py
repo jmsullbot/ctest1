@@ -85,7 +85,6 @@ Fields (in order):
     vz      peculiar vz       [km/s]
     mass    host halo mass    [Msun/h]
     id      host halo id
-    Ncent   1 = central, 0 = satellite
 """
 
 import argparse
@@ -114,7 +113,7 @@ FIXED_PARAMS: dict = {
     "ic":     1.0,
 }
 
-_CATALOG_FIELDS = ("x", "y", "z", "vx", "vy", "vz", "mass", "id", "Ncent")
+_CATALOG_FIELDS = ("x", "y", "z", "vx", "vy", "vz", "mass", "id")
 
 
 # AbacusSummit Planck-2018 flat ΛCDM cosmology (used for RSD conversion)
