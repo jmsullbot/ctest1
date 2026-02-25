@@ -193,12 +193,13 @@ qso_hods.hdf5
     ├── 000000/
     │   ├── attrs      logM_cut, logM1, sigma, alpha, kappa, alpha_c,
     │   │               alpha_s, log10_f_ic, n_gal
-    │   ├── x          [n_gal]  comoving x  [Mpc/h]
-    │   ├── y          [n_gal]  comoving y  [Mpc/h]
-    │   ├── z          [n_gal]  comoving z  [Mpc/h]
-    │   ├── vx         [n_gal]  peculiar vx [km/s]
-    │   ├── vy         [n_gal]  peculiar vy [km/s]
-    │   ├── vz         [n_gal]  peculiar vz [km/s]
+    │   ├── x          [n_gal]  comoving x     [Mpc/h]  (real-space)
+    │   ├── y          [n_gal]  comoving y     [Mpc/h]  (real-space)
+    │   ├── z          [n_gal]  comoving z     [Mpc/h]  (real-space)
+    │   ├── z_rsd      [n_gal]  redshift-space z [Mpc/h] (only if want_rsd=True)
+    │   ├── vx         [n_gal]  peculiar vx    [km/s]
+    │   ├── vy         [n_gal]  peculiar vy    [km/s]
+    │   ├── vz         [n_gal]  peculiar vz    [km/s]
     │   ├── mass       [n_gal]  host halo mass [M☉/h]
     │   └── id         [n_gal]  host halo id
     └── …
@@ -215,8 +216,9 @@ qso_hods.npz
 ├── n_gal        [n_runs]       galaxy count per run
 ├── param_names  [8]            column labels for params
 ├── offsets      [n_runs + 1]   cumulative n_gal (boundary indices)
-├── x            [total_gal]    comoving x  [Mpc/h]  ← all runs concatenated
-├── y, z         [total_gal]    comoving y, z
+├── x            [total_gal]    comoving x       [Mpc/h]  real-space; all runs concatenated
+├── y, z         [total_gal]    comoving y, z    [Mpc/h]  real-space
+├── z_rsd        [total_gal]    redshift-space z [Mpc/h]  only present if want_rsd=True
 ├── vx, vy, vz   [total_gal]    peculiar velocities [km/s]
 ├── mass         [total_gal]    host halo mass [M☉/h]
 ├── id           [total_gal]    host halo id

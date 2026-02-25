@@ -22,7 +22,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from compute_number_density import compute_number_densities
-from generate_qso_hods import _CATALOG_FIELDS, _write_npz
+from generate_qso_hods import _CATALOG_FIELDS, _OM_ABACUS, _compute_z_rsd, _write_npz
 from plot_occupation import n_cen, n_sat, plot_occupation
 
 
@@ -247,15 +247,58 @@ def test_plot_occupation_multiple_param_sets():
 
 
 # ---------------------------------------------------------------------------
+# _compute_z_rsd tests
+# ---------------------------------------------------------------------------
+
+def test_z_rsd_zero_velocity():
+    """Zero velocity → no displacement."""
+    z   = np.array([100.0, 200.0, 300.0])
+    vz  = np.zeros(3)
+    out = _compute_z_rsd(z, vz, z_mock=0.5)
+    np.testing.assert_array_equal(out, z)
+
+
+def test_z_rsd_at_z0():
+    """At z_mock=0: H(0)/(1+0) = 100 km/s/(Mpc/h), so Δz = v/100."""
+    z   = np.array([0.0])
+    vz  = np.array([100.0])   # 100 km/s → shift of 1 Mpc/h
+    out = _compute_z_rsd(z, vz, z_mock=0.0)
+    assert out[0] == pytest.approx(1.0, rel=1e-10)
+
+
+def test_z_rsd_formula():
+    """Check against manually computed H(z)/(1+z) for z_mock=1.0."""
+    z_mock = 1.0
+    Om     = _OM_ABACUS
+    E_z    = np.sqrt(Om * (1 + z_mock) ** 3 + (1 - Om))
+    H_over_1pz = 100.0 * E_z / (1 + z_mock)
+
+    z   = np.array([500.0])
+    vz  = np.array([200.0])
+    expected = 500.0 + 200.0 / H_over_1pz
+    out = _compute_z_rsd(z, vz, z_mock=z_mock)
+    assert out[0] == pytest.approx(expected, rel=1e-12)
+
+
+def test_z_rsd_negative_velocity():
+    """Negative velocity displaces toward smaller z."""
+    z   = np.array([500.0])
+    vz  = np.array([-300.0])
+    out = _compute_z_rsd(z, vz, z_mock=0.8)
+    assert out[0] < 500.0
+
+
+# ---------------------------------------------------------------------------
 # _write_npz round-trip tests
 # ---------------------------------------------------------------------------
 
-def _make_cat_accum(n_gals_per_run: list[int], seed: int = 7):
+def _make_cat_accum(n_gals_per_run: list[int], seed: int = 7, with_z_rsd: bool = False):
     """Build a cat_accum dict matching the structure generate_hod_samples produces."""
     rng = np.random.default_rng(seed)
-    cat_accum = {field: [] for field in _CATALOG_FIELDS}
+    fields = (*_CATALOG_FIELDS, "z_rsd") if with_z_rsd else _CATALOG_FIELDS
+    cat_accum = {field: [] for field in fields}
     for ng in n_gals_per_run:
-        for field in _CATALOG_FIELDS:
+        for field in fields:
             if ng > 0:
                 if field in ("id", "Ncent"):
                     arr = rng.integers(0, 1000, size=ng)
@@ -298,6 +341,25 @@ def test_write_npz_round_trip(tmp_path):
             np.testing.assert_array_equal(data["x"][sl], expected_x)
         else:
             assert sl.stop - sl.start == 0
+
+
+def test_write_npz_with_z_rsd(tmp_path):
+    """z_rsd column is stored and slices correctly when provided."""
+    n_gals_per_run = [4, 6]
+    rng     = np.random.default_rng(1)
+    samples = rng.random((2, len(PARAM_NAMES)))
+    n_gals  = np.array(n_gals_per_run, dtype=np.int64)
+    cat_acc = _make_cat_accum(n_gals_per_run, with_z_rsd=True)
+
+    npz_path = tmp_path / "rsd.npz"
+    _write_npz(npz_path, samples, n_gals, PARAM_NAMES, cat_acc)
+
+    data = np.load(npz_path)
+    assert "z_rsd" in data
+
+    for run_i, ng in enumerate(n_gals_per_run):
+        sl = slice(int(data["offsets"][run_i]), int(data["offsets"][run_i + 1]))
+        np.testing.assert_array_equal(data["z_rsd"][sl], cat_acc["z_rsd"][run_i])
 
 
 def test_write_npz_all_empty(tmp_path):
