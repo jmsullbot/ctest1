@@ -1,0 +1,84 @@
+# AbacusHOD configuration for LRG HOD catalog generation
+#
+# Fill in the paths under sim_params before running.  Simulation data is NOT
+# included in this repository — point these paths at wherever you have the
+# AbacusSummit boxes stored.
+#
+# Parameters are loaded from an external .npy file (pass via --params).
+# See generate_lrg_hods.py for the expected column layout.
+#
+# Reference: Yuan et al. 2024  (arXiv:2409.10609)
+
+
+# ---------------------------------------------------------------------------
+# Simulation parameters
+# ---------------------------------------------------------------------------
+sim_params:
+    sim_name: 'AbacusSummit_base_c000_ph000'    # which AbacusSummit box
+    sim_dir: '/path/to/AbacusSummit/'            # directory with the simulation
+    output_dir: '/path/to/output/mocks/'         # galaxy mock output (write_to_disk=True)
+    subsample_dir: '/path/to/output/subsample/'  # where prepare_sim saves subsampled halos
+    z_mock: 0.5                                  # redshift snapshot (LRGs: typically z~0.3–0.8)
+    cleaned_halos: True                          # use cleaned halo catalogs (recommended)
+
+
+# ---------------------------------------------------------------------------
+# prepare_sim settings  (used only when running with --prepare_sim)
+# ---------------------------------------------------------------------------
+prepare_sim:
+    Nparallel_load: 5
+    Nthread_per_load: 'auto'
+
+
+# ---------------------------------------------------------------------------
+# HOD parameters
+# ---------------------------------------------------------------------------
+HOD_params:
+    want_ranks: True            # satellite profile flexibility via rank-ordering (enables s)
+    want_AB: True               # assembly bias (enables Acent, Asat, Bcent, Bsat)
+    density_sigma: 3            # scale radius [Mpc/h] for local density environment
+    want_rsd: False             # always False here; z_rsd computed explicitly in the script
+    write_to_disk: False        # keep False — the script handles all I/O
+
+    tracer_flags:
+        LRG: True
+        ELG: False
+        QSO: False
+
+    # Placeholder LRG params used only to initialise AbacusHOD.
+    # The script overwrites all 12 varied params at each row of the input table.
+    LRG_params:
+        # --- fixed (not in the input table) ---
+        s_v:      0.0    # velocity-rank satellite flexibility
+        s_p:      0.0    # perihelion-rank satellite flexibility
+        s_r:      0.0    # radial-rank satellite flexibility
+        ic:       1.0    # incompleteness correction
+
+        # --- varied (overwritten per row; placeholder values below) ---
+        logM_cut: 13.35
+        logM1:    14.20
+        sigma:    0.37    # passed as sigma = 10**logsigma from the input file
+        alpha:    1.0
+        kappa:    0.04
+        alpha_c:  0.0
+        alpha_s:  1.0
+        s:        0.0
+        Acent:    0.0
+        Asat:     0.0
+        Bcent:    0.0
+        Bsat:     0.0
+
+
+# ---------------------------------------------------------------------------
+# Clustering parameters
+# (Required by the AbacusHOD constructor but not used during catalog
+#  generation.  Leave the defaults as-is.)
+# ---------------------------------------------------------------------------
+clustering_params:
+    clustering_type: 'xirppi'
+    bin_params:
+        logmin: -0.77288
+        logmax:  1.47712
+        nbins: 8
+    pimax: 30
+    pi_bin_size: 5
