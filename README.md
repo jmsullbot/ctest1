@@ -311,25 +311,31 @@ Fixed parameters (not in the table): `s_v = s_p = s_r = 0`, `ic = 1`.
 
 ### Getting the simulation data
 
-Stage AbacusSummit into your own space from the **public release** via
-Globus ([data-access
-docs](https://abacussummit.readthedocs.io/en/latest/data-access.html)),
-then point `sim_dir` in `config/lrg_hod.yaml` at it. You only need one
-redshift, not the whole box — for z = 0.5 that is:
+**Nothing to download.** AbacusSummit is already staged on disk at NERSC
+in a world-readable location, which `config/lrg_hod.yaml` points at by
+default:
 
 ```
-<sim_name>/halos/z0.500/halo_info/
-<sim_name>/halos/z0.500/halo_rv_A/
-<sim_name>/halos/z0.500/field_rv_A/
-cleaning/<sim_name>/z0.500/            # only if cleaned_halos: True
+/global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/
 ```
 
-Order 100–200 GB rather than multiple TB.
+The `/public/` component is what makes it open to every NERSC user —
+`desi` in the path is merely where it is hosted and does **not** mean you
+need collaboration membership. For compute-node jobs there is a faster
+read-only mount of the same data at
+`/dvs_ro/cfs/cdirs/desi/public/cosmosim/AbacusSummit/`.
 
-> DESI collaborators can instead read the copy at
-> `/global/cfs/cdirs/desi/cosmosim/Abacus/`, but this requires membership
-> of the `desi` unix group (`groups` to check; "Permission denied" means
-> you lack it). The default config does **not** assume this.
+Layout is `<sim_name>/halos/z0.500/halo_info/halo_info_000.asdf`, … Not
+every simulation is staged on disk (some live only on HPSS tape), so
+check yours is present first:
+
+```bash
+ls /global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/AbacusSummit_base_c000_ph000/halos/
+```
+
+> Do **not** use `/global/cfs/cdirs/desi/cosmosim/Abacus/` (no `public/`).
+> That is the collaboration-only copy and fails with "Permission denied"
+> unless you are in the `desi` unix group.
 
 ### One-time setup
 

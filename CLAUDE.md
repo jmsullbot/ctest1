@@ -14,19 +14,27 @@ or job-submission changes.
    `slurm/env.local.sh.example`). `USE_CONDA_MODULE=1` exists only as an
    opt-in escape hatch — never the default.
 
-2. **Never assume DESI access.**
-   The user is *not* in the `desi` unix group. Anything under
-   `/global/cfs/cdirs/desi/` (including the AbacusSummit copy at
-   `/global/cfs/cdirs/desi/cosmosim/Abacus/`) is unreadable and must not
-   be a default. Note that the SLURM allocation account `-A desi` is a
-   separate thing and does currently work — don't conflate the two.
+2. **Never assume DESI access — neither data nor allocation.**
+   The user is *not* in the `desi` unix group, and `-A desi` is *not* a
+   usable SLURM allocation for them. Never emit either as a default.
+   - Unreadable: `/global/cfs/cdirs/desi/cosmosim/Abacus/`
+     (collaboration-only).
+   - The sbatch scripts leave `#SBATCH -A` commented out so SLURM uses
+     the user's own default allocation.
 
 3. **Use only public resources.**
-   AbacusSummit must come from the public release via Globus
-   (<https://abacussummit.readthedocs.io/en/latest/data-access.html>),
-   staged into the user's own space (`$PSCRATCH/...`). Prefer fetching
-   only the redshift actually needed, not whole boxes. Same principle for
-   any other data or software: no collaboration-gated sources.
+   AbacusSummit is already on disk at NERSC, world-readable, at
+
+       /global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/
+
+   The `/public/` component is what makes it open — `desi` in the path is
+   just where it is hosted, and does **not** imply membership is needed.
+   Read-only mount for compute nodes:
+   `/dvs_ro/cfs/cdirs/desi/public/cosmosim/AbacusSummit/`.
+   Layout: `<sim_name>/halos/z0.500/halo_info/halo_info_000.asdf`, …
+   No Globus download is required. Not every box is staged on disk (some
+   are HPSS-tape only), so check before submitting. Same principle for any
+   other data or software: no collaboration-gated sources.
 
 ## Platform
 

@@ -11,7 +11,9 @@
 #   sbatch --export=ALL,REPO_DIR=/path/to/ctest1 slurm/perlmutter_prepare_sim.sbatch
 #
 #SBATCH -J prep_lrg
-#SBATCH -A desi              # your NERSC allocation account
+# Uncomment and set if you have more than one NERSC allocation; with a
+# single default allocation SLURM picks it automatically.
+##SBATCH -A <your_allocation>
 #SBATCH -C cpu
 #SBATCH -q regular
 #SBATCH -N 1
