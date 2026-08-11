@@ -4,11 +4,12 @@
 # space).  Replace <u>/<user> in the scratch paths with your username
 # (e.g. /pscratch/sd/j/jdoe/...).
 #
-# Parameters are loaded from an external .npy file (pass via --params).
-# See generate_lrg_hods.py for the expected column layout.  The parameter
-# table follows the flat priors of eq. (74) of Ivanov et al. 2024
-# (arXiv:2409.10609), who generated 10500 LRG mocks at z=0.5 with AbacusHOD
-# (Yuan et al. 2022, arXiv:2110.11412) on the AbacusSummit fiducial cosmology.
+# Parameters are loaded from an external .npy table (pass via --params;
+# default lrg_params_eq74.npy, committed to the repo).  The table is built
+# by make_lrg_param_table.py from the flat priors of eq. (74) of Ivanov
+# et al. 2024 (arXiv:2409.10609), who generated 10500 LRG mocks at z=0.5
+# with AbacusHOD (Yuan et al. 2022, arXiv:2110.11412) on the AbacusSummit
+# fiducial cosmology.  See generate_lrg_hods.py for the column layout.
 
 
 # ---------------------------------------------------------------------------

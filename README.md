@@ -271,11 +271,15 @@ with h5py.File("output/qso_hods.hdf5", "r") as f:
 assembly bias, and the satellite-profile parameter `s`) once per row of a
 pre-supplied parameter table — no sampling happens at runtime.
 
-The parameter table follows the flat priors of **eq. (74) of Ivanov,
+The repo ships **`lrg_params_eq74.npy`** — 10500 parameter vectors drawn
+(Latin Hypercube, seed 42) from the flat priors of **eq. (74) of Ivanov,
 Obuljen, Cuesta-Lazaro & Toomey 2024**
-([arXiv:2409.10609](https://arxiv.org/abs/2409.10609)): 10500 LRG mocks at
-z = 0.5 on the AbacusSummit fiducial cosmology, generated with AbacusHOD
-(Yuan et al. 2022, [arXiv:2110.11412](https://arxiv.org/abs/2110.11412)).
+([arXiv:2409.10609](https://arxiv.org/abs/2409.10609)), who generated
+10500 LRG mocks at z = 0.5 on the AbacusSummit fiducial cosmology with
+AbacusHOD (Yuan et al. 2022,
+[arXiv:2110.11412](https://arxiv.org/abs/2110.11412)). Regenerate or
+resample the table with `make_lrg_param_table.py` (`--method uniform`
+gives paper-style independent uniform draws instead of LHS).
 
 ## Input parameter table
 
@@ -290,17 +294,16 @@ A `.npy` array of shape (N, 14). Columns, in order:
 | 4 | `alpha_c` | [0, 1] | yes |
 | 5 | `alpha_s` | [0, 2] | yes |
 | 6 | `kappa` | [0, 1.5] | yes |
-| 7 | `s` | [0, 1] — see note | yes |
+| 7 | `s` | [0, 1] | yes |
 | 8 | `Acent` | [−1, 1] | yes |
 | 9 | `Asat` | [−1, 1] | yes |
 | 10 | `Bcent` | [−1, 1] | yes |
 | 11 | `Bsat` | [−1, 1] | yes |
 | 12 | `sigma` | = 10^logsigma | yes (used directly) |
-| 13 | `nbar` | derived, [1.1e−5, 8.3e−3] | no — stored for reference |
+| 13 | `nbar` | NaN — measured output, not an input | no — stored for reference |
 
-**Note on `s`:** the supplied table spans s ∈ [−1, 1], wider than the
-[0, 1] printed in eq. (74). Both ranges are within AbacusHOD's valid
-domain for `s`, so the pipeline handles either.
+All twelve varied parameters, including `s`, use exactly the eq. (74)
+ranges.
 
 Fixed parameters (not in the table): `s_v = s_p = s_r = 0`, `ic = 1`.
 
@@ -313,14 +316,22 @@ membership — otherwise pull the box into your own space with Globus).
 
 ### One-time setup
 
+No GitHub keys needed on Perlmutter — copy the repo over as a zip:
+
 ```bash
+# On your laptop (or grab a zip that was already made for you):
+git archive --format=zip --prefix=ctest1/ -o ctest1_old_LRG.zip old_LRG
+scp ctest1_old_LRG.zip <user>@perlmutter.nersc.gov:~/
+
+# On Perlmutter:
+unzip ctest1_old_LRG.zip && cd ctest1
 module load conda
 conda create -n abacus python=3.10 -y
 conda activate abacus
-git clone <this-repo> && cd <repo>
-git checkout old_LRG
 pip install -r requirements.txt
 ```
+
+(`git clone` + `git checkout old_LRG` works too if you have keys set up.)
 
 Edit `config/lrg_hod.yaml`: replace `<u>/<user>` in the `$PSCRATCH` paths
 with your username, and confirm `sim_name` / `z_mock` match the snapshot

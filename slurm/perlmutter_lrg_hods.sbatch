@@ -28,7 +28,7 @@ EXTRA_FLAGS=""               # set to "--prepare_sim" on the first run only
 
 python generate_lrg_hods.py \
     --path2config config/lrg_hod.yaml \
-    --params      new_hods.npy \
+    --params      lrg_params_eq74.npy \
     --output      $OUTDIR/lrg_hods.hdf5 \
     --Nthread     128 \
     $EXTRA_FLAGS
