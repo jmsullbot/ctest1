@@ -325,6 +325,13 @@ scp ctest1_old_LRG.zip <user>@perlmutter.nersc.gov:~/
 
 # On Perlmutter:
 unzip ctest1_old_LRG.zip && cd ctest1
+bash slurm/setup_env.sh          # creates the 'abacus' env + installs deps
+```
+
+Run `setup_env.sh` on a **login node**, not via `sbatch`. It is idempotent
+— safe to re-run if it fails partway. Equivalent by hand:
+
+```bash
 module load conda
 conda create -n abacus python=3.10 -y
 conda activate abacus
@@ -350,6 +357,16 @@ sbatch slurm/perlmutter_prepare_sim.sbatch
 # then the array (finishes in well under an hour of wall-clock):
 sbatch slurm/perlmutter_lrg_hods_array.sbatch
 ```
+
+The scripts work whether you submit from the repo root or from `slurm/`.
+From anywhere else, point them at the repo:
+
+```bash
+sbatch --export=ALL,REPO_DIR=/path/to/ctest1 slurm/perlmutter_prepare_sim.sbatch
+```
+
+Other overrides: `CONDA_ENV=myenv` (default `abacus`) and `OUTDIR=...`
+(default `$PSCRATCH/lrg_hods`), passed the same way via `--export=ALL,...`.
 
 Each array task writes per-run `.npy` catalogs named by **global row
 index** (no collisions) and its own small metadata-only
