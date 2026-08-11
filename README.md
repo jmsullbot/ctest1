@@ -325,18 +325,27 @@ scp ctest1_old_LRG.zip <user>@perlmutter.nersc.gov:~/
 
 # On Perlmutter:
 unzip ctest1_old_LRG.zip && cd ctest1
-bash slurm/setup_env.sh          # creates the 'abacus' env + installs deps
+
+# tell the scripts where your conda lives (once):
+cp slurm/env.local.sh.example slurm/env.local.sh
+conda info --base                 # <- put this path in CONDA_BASE
+${EDITOR:-nano} slurm/env.local.sh
+
+bash slurm/setup_env.sh           # creates the env + installs deps
 ```
 
 Run `setup_env.sh` on a **login node**, not via `sbatch`. It is idempotent
-— safe to re-run if it fails partway. Equivalent by hand:
+— safe to re-run if it fails partway.
 
-```bash
-module load conda
-conda create -n abacus python=3.10 -y
-conda activate abacus
-pip install -r requirements.txt
-```
+`slurm/env.local.sh` is gitignored, so your paths survive re-unzipping the
+repo. It works with **your own conda installation** (the default), NERSC's
+conda module (`USE_CONDA_MODULE=1`), or your own activation script
+(`ENV_READY=1`) — see `slurm/env.local.sh.example` for all three.
+
+> **Why this is needed:** batch jobs inherit your `PATH` but not shell
+> functions, so a bare `conda activate` fails inside a job script even
+> when it works in your login shell. The scripts source
+> `$CONDA_BASE/etc/profile.d/conda.sh` first to define it.
 
 (`git clone` + `git checkout old_LRG` works too if you have keys set up.)
 
@@ -365,8 +374,17 @@ From anywhere else, point them at the repo:
 sbatch --export=ALL,REPO_DIR=/path/to/ctest1 slurm/perlmutter_prepare_sim.sbatch
 ```
 
-Other overrides: `CONDA_ENV=myenv` (default `abacus`) and `OUTDIR=...`
-(default `$PSCRATCH/lrg_hods`), passed the same way via `--export=ALL,...`.
+Other overrides, passed the same way via `--export=ALL,...` or set once in
+`slurm/env.local.sh`:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CONDA_BASE` | auto-detected | conda root (dir containing `etc/profile.d/conda.sh`) |
+| `CONDA_ENV` | `abacus` | env name, or a full prefix path |
+| `USE_CONDA_MODULE` | `0` | set `1` to `module load conda` (NERSC's conda) |
+| `ENV_READY` | `0` | set `1` if `env.local.sh` activates the env itself |
+| `REPO_DIR` | submit dir | repo location |
+| `OUTDIR` | `$PSCRATCH/lrg_hods` | where catalogs are written |
 
 Each array task writes per-run `.npy` catalogs named by **global row
 index** (no collisions) and its own small metadata-only
