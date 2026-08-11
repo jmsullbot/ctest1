@@ -11,7 +11,7 @@
 #SBATCH -q regular
 #SBATCH -N 1
 #SBATCH -c 256
-#SBATCH -t 04:00:00
+#SBATCH -t 02:00:00        # typically finishes in 30-90 min (I/O-bound)
 #SBATCH -o prep_lrg_%j.out
 
 module load conda
