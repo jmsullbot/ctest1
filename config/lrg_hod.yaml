@@ -1,13 +1,14 @@
-# AbacusHOD configuration for LRG HOD catalog generation
+# AbacusHOD configuration for LRG HOD catalog generation — NERSC Perlmutter
 #
-# Fill in the paths under sim_params before running.  Simulation data is NOT
-# included in this repository — point these paths at wherever you have the
-# AbacusSummit boxes stored.
+# Default paths point at the AbacusSummit copy hosted at NERSC (DESI CFS
+# space).  Replace <u>/<user> in the scratch paths with your username
+# (e.g. /pscratch/sd/j/jdoe/...).
 #
 # Parameters are loaded from an external .npy file (pass via --params).
-# See generate_lrg_hods.py for the expected column layout.
-#
-# Reference: Yuan et al. 2024  (arXiv:2409.10609)
+# See generate_lrg_hods.py for the expected column layout.  The parameter
+# table follows the flat priors of eq. (74) of Ivanov et al. 2024
+# (arXiv:2409.10609), who generated 10500 LRG mocks at z=0.5 with AbacusHOD
+# (Yuan et al. 2022, arXiv:2110.11412) on the AbacusSummit fiducial cosmology.
 
 
 # ---------------------------------------------------------------------------
@@ -15,10 +16,14 @@
 # ---------------------------------------------------------------------------
 sim_params:
     sim_name: 'AbacusSummit_base_c000_ph000'    # which AbacusSummit box
-    sim_dir: '/path/to/AbacusSummit/'            # directory with the simulation
-    output_dir: '/path/to/output/mocks/'         # galaxy mock output (write_to_disk=True)
-    subsample_dir: '/path/to/output/subsample/'  # where prepare_sim saves subsampled halos
-    z_mock: 0.5                                  # redshift snapshot (LRGs: typically z~0.3–0.8)
+    # AbacusSummit at NERSC lives on the DESI CFS space (requires desi group
+    # membership; otherwise copy the box into your own space via Globus):
+    sim_dir: '/global/cfs/cdirs/desi/cosmosim/Abacus/'
+    # Faster read-only mount for compute-node jobs (same data):
+    # sim_dir: '/dvs_ro/cfs/cdirs/desi/cosmosim/Abacus/'
+    output_dir: '/pscratch/sd/<u>/<user>/lrg_hods/mocks/'          # only used if write_to_disk=True
+    subsample_dir: '/pscratch/sd/<u>/<user>/lrg_hods/subsamples/'  # prepare_sim output
+    z_mock: 0.5                                  # matches Ivanov+2024 (catalogs generated at z=0.5)
     cleaned_halos: True                          # use cleaned halo catalogs (recommended)
 
 

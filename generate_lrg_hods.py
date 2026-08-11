@@ -17,9 +17,11 @@ Column notes:
                        stored in HDF5 for reference but NOT an AbacusHOD
                        parameter
 
-HOD model (Zheng+2007 with assembly-bias extensions, Yuan+2024):
+HOD model (AbacusHOD LRG base model — Zheng+2007 with velocity bias,
+assembly bias, and satellite-profile extensions):
 
-    <N_cen>(M) = ½ erfc[ ln(M_cut / M) / (√2 σ) ]
+    <N_cen>(M) = ic/2 · erfc[ (logM_cut − log10 M) / (√2 σ) ]
+                 (σ in dex — AbacusHOD's LRG convention uses log10 mass)
 
     <N_sat>(M) = <N_cen>(M) · [(M − κ M_cut) / M1]^α   for M > κ M_cut
 
@@ -27,7 +29,19 @@ HOD model (Zheng+2007 with assembly-bias extensions, Yuan+2024):
     Profile ranks:  want_ranks = True  →  s active (rank-order satellites
                                            by local Vmax)
 
-Reference: Yuan et al. 2024 (arXiv:2409.10609)
+The parameter table follows the flat priors of eq. (74) of Ivanov et al.
+2024 (arXiv:2409.10609): 10500 samples at z=0.5 on the AbacusSummit
+fiducial cosmology,
+
+    log10 M_cut ∈ [12, 14]      log10 M1 ∈ [13, 15]
+    log10 σ     ∈ [−3.5, 1.0]   α        ∈ [0.5, 1.5]
+    α_c ∈ [0, 1]   α_s ∈ [0, 2]   s ∈ [0, 1]*   κ ∈ [0, 1.5]
+    A_cen, A_sat, B_cen, B_sat ∈ [−1, 1]
+
+    * the supplied table spans s ∈ [−1, 1], wider than printed in eq. (74);
+      both lie within AbacusHOD's valid domain for s.
+
+HOD code reference: Yuan et al. 2022 (arXiv:2110.11412, AbacusHOD)
 
 Usage
 -----

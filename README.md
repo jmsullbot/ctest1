@@ -1,5 +1,11 @@
 # QSO HOD Sample Generation
 
+> **This branch (`old_LRG`) also contains an LRG pipeline** —
+> `generate_lrg_hods.py` + `config/lrg_hod.yaml` — which runs AbacusHOD's
+> LRG tracer over a pre-supplied parameter table following
+> Ivanov et al. 2024 ([arXiv:2409.10609](https://arxiv.org/abs/2409.10609)).
+> See [LRG HOD Generation](#lrg-hod-generation-this-branch) below.
+
 Generate QSO Halo Occupation Distribution (HOD) mock catalogs across a
 parameter space drawn from the priors in **Table II of
 Yuan et al. 2023** ([arXiv:2306.06314](https://arxiv.org/abs/2306.06314))
@@ -256,3 +262,94 @@ with h5py.File("output/qso_hods.hdf5", "r") as f:
     cat = f[f"catalogs/{idx:06d}"]
     x, y, z = cat["x"][:], cat["y"][:], cat["z"][:]
 ```
+
+---
+
+# LRG HOD Generation (this branch)
+
+`generate_lrg_hods.py` runs AbacusHOD's **LRG** tracer (with velocity bias,
+assembly bias, and the satellite-profile parameter `s`) once per row of a
+pre-supplied parameter table — no sampling happens at runtime.
+
+The parameter table follows the flat priors of **eq. (74) of Ivanov,
+Obuljen, Cuesta-Lazaro & Toomey 2024**
+([arXiv:2409.10609](https://arxiv.org/abs/2409.10609)): 10500 LRG mocks at
+z = 0.5 on the AbacusSummit fiducial cosmology, generated with AbacusHOD
+(Yuan et al. 2022, [arXiv:2110.11412](https://arxiv.org/abs/2110.11412)).
+
+## Input parameter table
+
+A `.npy` array of shape (N, 14). Columns, in order:
+
+| # | Column | eq. (74) prior | Passed to AbacusHOD? |
+|---|--------|----------------|----------------------|
+| 0 | `logM_cut` | [12, 14] | yes |
+| 1 | `logM1` | [13, 15] | yes |
+| 2 | `logsigma` | [−3.5, 1.0] | no — stored for reference |
+| 3 | `alpha` | [0.5, 1.5] | yes |
+| 4 | `alpha_c` | [0, 1] | yes |
+| 5 | `alpha_s` | [0, 2] | yes |
+| 6 | `kappa` | [0, 1.5] | yes |
+| 7 | `s` | [0, 1] — see note | yes |
+| 8 | `Acent` | [−1, 1] | yes |
+| 9 | `Asat` | [−1, 1] | yes |
+| 10 | `Bcent` | [−1, 1] | yes |
+| 11 | `Bsat` | [−1, 1] | yes |
+| 12 | `sigma` | = 10^logsigma | yes (used directly) |
+| 13 | `nbar` | derived, [1.1e−5, 8.3e−3] | no — stored for reference |
+
+**Note on `s`:** the supplied table spans s ∈ [−1, 1], wider than the
+[0, 1] printed in eq. (74). Both ranges are within AbacusHOD's valid
+domain for `s`, so the pipeline handles either.
+
+Fixed parameters (not in the table): `s_v = s_p = s_r = 0`, `ic = 1`.
+
+## Running on NERSC Perlmutter
+
+AbacusSummit is hosted at NERSC under the DESI CFS space
+(`/global/cfs/cdirs/desi/cosmosim/Abacus/`, requires `desi` group
+membership — otherwise pull the box into your own space with Globus).
+`config/lrg_hod.yaml` already points there.
+
+### One-time setup
+
+```bash
+module load conda
+conda create -n abacus python=3.10 -y
+conda activate abacus
+git clone <this-repo> && cd <repo>
+git checkout old_LRG
+pip install -r requirements.txt
+```
+
+Edit `config/lrg_hod.yaml`: replace `<u>/<user>` in the `$PSCRATCH` paths
+with your username, and confirm `sim_name` / `z_mock` match the snapshot
+you want (z = 0.5 matches Ivanov+2024).
+
+### Submit
+
+```bash
+sbatch slurm/perlmutter_lrg_hods.sbatch
+```
+
+On the **first run** for a given box + redshift, set
+`EXTRA_FLAGS="--prepare_sim"` inside the sbatch script so the halo
+subsamples are built (written to `subsample_dir`, reused afterwards).
+
+### Storage warning
+
+With the base (2 Gpc/h)³ box and the Ivanov+2024 number densities
+(median n̄ ≈ 1.1×10⁻³ (Mpc/h)⁻³ → ~9M galaxies/run, up to 66M), saving
+full catalogs for all 10500 runs costs roughly **8 TB in `.npy` plus the
+same again in HDF5** — a large fraction of the default 20 TB `$PSCRATCH`
+quota, and `$PSCRATCH` is purged (~8 weeks). Consider computing your
+summary statistics inside the loop instead of keeping every catalog, or
+keeping catalogs for a subset of rows only.
+
+## Output
+
+Identical structure to the QSO pipeline: one HDF5 file with all runs and
+metadata (plus per-run `nbar`/`logsigma`), and per-run structured `.npy`
+catalogs in `catalogs/NNNNNN.npy` with fields
+`x, y, z, z_rsd, vx, vy, vz, mass, id` (real-space positions; `z_rsd`
+computed plane-parallel along z at `z_mock`).
