@@ -309,10 +309,27 @@ Fixed parameters (not in the table): `s_v = s_p = s_r = 0`, `ic = 1`.
 
 ## Running on NERSC Perlmutter
 
-AbacusSummit is hosted at NERSC under the DESI CFS space
-(`/global/cfs/cdirs/desi/cosmosim/Abacus/`, requires `desi` group
-membership — otherwise pull the box into your own space with Globus).
-`config/lrg_hod.yaml` already points there.
+### Getting the simulation data
+
+Stage AbacusSummit into your own space from the **public release** via
+Globus ([data-access
+docs](https://abacussummit.readthedocs.io/en/latest/data-access.html)),
+then point `sim_dir` in `config/lrg_hod.yaml` at it. You only need one
+redshift, not the whole box — for z = 0.5 that is:
+
+```
+<sim_name>/halos/z0.500/halo_info/
+<sim_name>/halos/z0.500/halo_rv_A/
+<sim_name>/halos/z0.500/field_rv_A/
+cleaning/<sim_name>/z0.500/            # only if cleaned_halos: True
+```
+
+Order 100–200 GB rather than multiple TB.
+
+> DESI collaborators can instead read the copy at
+> `/global/cfs/cdirs/desi/cosmosim/Abacus/`, but this requires membership
+> of the `desi` unix group (`groups` to check; "Permission denied" means
+> you lack it). The default config does **not** assume this.
 
 ### One-time setup
 

@@ -17,11 +17,24 @@
 # ---------------------------------------------------------------------------
 sim_params:
     sim_name: 'AbacusSummit_base_c000_ph000'    # which AbacusSummit box
-    # AbacusSummit at NERSC lives on the DESI CFS space (requires desi group
-    # membership; otherwise copy the box into your own space via Globus):
-    sim_dir: '/global/cfs/cdirs/desi/cosmosim/Abacus/'
-    # Faster read-only mount for compute-node jobs (same data):
-    # sim_dir: '/dvs_ro/cfs/cdirs/desi/cosmosim/Abacus/'
+
+    # --- Where the AbacusSummit data lives -------------------------------
+    # Option A: DESI's copy on CFS.  Requires membership of the 'desi' unix
+    # group -- check with `groups`.  If you get "Permission denied", you are
+    # not in it: request access via https://iris.nersc.gov, or use Option B.
+    #   sim_dir: '/global/cfs/cdirs/desi/cosmosim/Abacus/'
+    # Faster read-only mount of the same data for compute-node jobs:
+    #   sim_dir: '/dvs_ro/cfs/cdirs/desi/cosmosim/Abacus/'
+    #
+    # Option B (default): your own copy, fetched from the public
+    # AbacusSummit release via Globus --
+    # https://abacussummit.readthedocs.io/en/latest/data-access.html
+    # You only need one redshift, not the whole box.  For z=0.5:
+    #     <sim_name>/halos/z0.500/halo_info/
+    #     <sim_name>/halos/z0.500/halo_rv_A/
+    #     <sim_name>/halos/z0.500/field_rv_A/
+    #     cleaning/<sim_name>/z0.500/        (only if cleaned_halos: True)
+    sim_dir: '/pscratch/sd/<u>/<user>/AbacusSummit/'
     output_dir: '/pscratch/sd/<u>/<user>/lrg_hods/mocks/'          # only used if write_to_disk=True
     subsample_dir: '/pscratch/sd/<u>/<user>/lrg_hods/subsamples/'  # prepare_sim output
     z_mock: 0.5                                  # matches Ivanov+2024 (catalogs generated at z=0.5)
