@@ -52,13 +52,20 @@ Prepare simulation subsamples (once per box/redshift):
         --path2config config/lrg_hod.yaml \\
         --params      lrg_params_eq74.npy
 
-Generate HOD catalogs:
+Generate HOD catalogs (single process, all rows):
 
     python generate_lrg_hods.py \\
         --path2config config/lrg_hod.yaml \\
         --params      lrg_params_eq74.npy \\
         --output      output/lrg_hods.hdf5 \\
         --Nthread     32
+
+Embarrassingly parallel across rows — shard over a SLURM job array
+(each task writes catalogs named by global row index plus its own
+`_rowsSTART-END` HDF5, so tasks never conflict):
+
+    python generate_lrg_hods.py ... \\
+        --shard $SLURM_ARRAY_TASK_ID --nshards 16
 
 Output files
 ------------
@@ -245,6 +252,20 @@ def prepare_simulation(path2config: str) -> None:
     print(f"Preparation complete in {time.time() - t0:.1f} s\n")
 
 
+def _shard_range(n_total: int, shard: int, nshards: int) -> tuple[int, int]:
+    """Row range [start, end) for shard `shard` of `nshards` even shards.
+
+    Rows are distributed as evenly as possible; the first n_total % nshards
+    shards get one extra row.
+    """
+    if not (0 <= shard < nshards):
+        raise ValueError(f"shard must be in [0, {nshards}), got {shard}")
+    base, rem = divmod(n_total, nshards)
+    start = shard * base + min(shard, rem)
+    end   = start + base + (1 if shard < rem else 0)
+    return start, end
+
+
 def generate_hod_samples(
     path2config: str,
     params_file: str,
@@ -252,9 +273,18 @@ def generate_hod_samples(
     Nthread: int = 16,
     want_rsd: bool = True,
     verbose: bool = False,
+    start: int = 0,
+    end: int | None = None,
 ) -> None:
     """
-    Run AbacusHOD LRG for every row of the parameter table and save output.
+    Run AbacusHOD LRG for rows [start, end) of the parameter table.
+
+    The task is embarrassingly parallel across rows: launch many instances
+    with disjoint [start, end) ranges (e.g. via a SLURM job array using
+    --shard/--nshards) and they will not conflict.  Per-run .npy catalogs
+    are named by *global* row index; each instance writes its own HDF5
+    file (an automatic `_rowsSTART-END` suffix is added when a subrange
+    is selected).
 
     Parameters
     ----------
@@ -263,13 +293,16 @@ def generate_hod_samples(
     params_file : str
         Path to the input .npy parameter table (N × 14).
     output_file : str
-        Path for the output HDF5 file.
+        Path for the output HDF5 file (suffixed automatically when sharded).
     Nthread : int
         Threads per HOD run.
     want_rsd : bool
         Whether to compute and store redshift-space distortions.
     verbose : bool
         Print per-halo verbose output from AbacusHOD.
+    start, end : int
+        Global row range [start, end) to process.  end=None means all
+        remaining rows.
     """
     from abacusnbody.hod.abacus_hod import AbacusHOD  # noqa: PLC0415
 
@@ -289,18 +322,29 @@ def generate_hod_samples(
 
     z_mock = float(sim_params.get("z_mock", 0.5))
 
-    # Load parameter table
-    abacus_params, logsigma_arr, nbar_arr = _load_params(params_file)
-    n_runs = len(abacus_params)
+    # Load parameter table and select this instance's row range
+    all_params, all_logsigma, all_nbar = _load_params(params_file)
+    n_total = len(all_params)
+    if end is None or end > n_total:
+        end = n_total
+    if start < 0 or start >= end:
+        print(f"Empty row range [{start}, {end}) of {n_total} — nothing to do.")
+        return
+
+    abacus_params = all_params[start:end]
+    logsigma_arr  = all_logsigma[start:end]
+    nbar_arr      = all_nbar[start:end]
+    n_runs        = len(abacus_params)
 
     print(f"Parameter file   : {params_file}")
-    print(f"Total HOD runs   : {n_runs}")
+    print(f"Rows (global)    : [{start}, {end})  of {n_total}")
+    print(f"HOD runs here    : {n_runs}")
     print(f"AbacusHOD params : {_ABACUS_PARAM_NAMES}")
     print(f"z_mock           : {z_mock}")
     print(f"want_rsd         : {want_rsd}")
     print()
 
-    # Initialise AbacusHOD with the first row as placeholder params
+    # Initialise AbacusHOD with the shard's first row as placeholder params
     first = dict(zip(_ABACUS_PARAM_NAMES, abacus_params[0]))
     HOD_params["LRG_params"] = {**first, **_FIXED_PARAMS}
 
@@ -315,6 +359,12 @@ def generate_hod_samples(
     print("Done.\n")
 
     out_path = Path(output_file)
+    if (start, end) != (0, n_total):
+        # One HDF5 per shard — no concurrent writes between array tasks
+        out_path = out_path.with_name(
+            f"{out_path.stem}_rows{start:06d}-{end:06d}{out_path.suffix}"
+        )
+        print(f"Sharded output   : {out_path}\n")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     n_gals       = np.zeros(n_runs, dtype=np.int64)
@@ -331,18 +381,23 @@ def generate_hod_samples(
     t_total = time.time()
 
     with h5py.File(out_path, "w") as hf:
-        hf.attrs["n_runs"]      = n_runs
-        hf.attrs["param_names"] = _ABACUS_PARAM_NAMES
-        hf.attrs["want_rsd"]    = want_rsd
-        hf.attrs["sim_name"]    = sim_params.get("sim_name", "unknown")
-        hf.attrs["z_mock"]      = z_mock
-        hf.attrs["params_file"] = str(Path(params_file).name)
+        hf.attrs["n_runs"]       = n_runs
+        hf.attrs["n_runs_total"] = n_total
+        hf.attrs["row_start"]    = start
+        hf.attrs["row_end"]      = end
+        hf.attrs["param_names"]  = _ABACUS_PARAM_NAMES
+        hf.attrs["want_rsd"]     = want_rsd
+        hf.attrs["sim_name"]     = sim_params.get("sim_name", "unknown")
+        hf.attrs["z_mock"]       = z_mock
+        hf.attrs["params_file"]  = str(Path(params_file).name)
 
         ds = hf.create_dataset("params", data=abacus_params)
         ds.attrs["columns"] = _ABACUS_PARAM_NAMES
 
-        hf.create_dataset("nbar",     data=nbar_arr)
-        hf.create_dataset("logsigma", data=logsigma_arr)
+        # Global row index of each entry (for joining shards back together)
+        hf.create_dataset("row_index", data=np.arange(start, end, dtype=np.int64))
+        hf.create_dataset("nbar",      data=nbar_arr)
+        hf.create_dataset("logsigma",  data=logsigma_arr)
 
         grp_fixed = hf.create_group("fixed_params")
         for k, v in _FIXED_PARAMS.items():
@@ -352,9 +407,10 @@ def generate_hod_samples(
         grp_cats = hf.create_group("catalogs")
 
         # ------------------------------------------------------------------
-        # Main loop
+        # Main loop — j is the local index, i_glob the global table row
         # ------------------------------------------------------------------
-        for i, row in enumerate(abacus_params):
+        for j, row in enumerate(abacus_params):
+            i_glob   = start + j
             params_i = dict(zip(_ABACUS_PARAM_NAMES, row))
 
             ball.tracers["LRG"] = {**params_i, **_FIXED_PARAMS}
@@ -371,8 +427,8 @@ def generate_hod_samples(
 
             lrg_cat = mock_dict.get("LRG", {})
             n_gal   = int(len(lrg_cat.get("x", [])))
-            n_gals[i]  = n_gal
-            ds_ngal[i] = n_gal
+            n_gals[j]  = n_gal
+            ds_ngal[j] = n_gal
 
             z_rsd_arr: np.ndarray | None = None
             if want_rsd and n_gal > 0:
@@ -383,12 +439,13 @@ def generate_hod_samples(
                         np.asarray(_z), np.asarray(_vz), z_mock
                     )
 
-            grp = grp_cats.create_group(f"{i:06d}")
+            grp = grp_cats.create_group(f"{i_glob:06d}")
             for name, val in params_i.items():
                 grp.attrs[name] = float(val)
-            grp.attrs["logsigma"] = float(logsigma_arr[i])
-            grp.attrs["nbar"]     = float(nbar_arr[i])
-            grp.attrs["n_gal"]    = n_gal
+            grp.attrs["logsigma"]  = float(logsigma_arr[j])
+            grp.attrs["nbar"]      = float(nbar_arr[j])
+            grp.attrs["n_gal"]     = n_gal
+            grp.attrs["row_index"] = i_glob
 
             for field in _CATALOG_FIELDS:
                 arr = lrg_cat.get(field)
@@ -398,11 +455,11 @@ def generate_hod_samples(
             if z_rsd_arr is not None:
                 grp.create_dataset("z_rsd", data=z_rsd_arr, compression="lzf")
 
-            _save_catalog_npy(npy_dir / f"{i:06d}.npy", lrg_cat, z_rsd_arr)
+            _save_catalog_npy(npy_dir / f"{i_glob:06d}.npy", lrg_cat, z_rsd_arr)
 
-            if i == 0 or (i + 1) % log_interval == 0 or i == n_runs - 1:
+            if j == 0 or (j + 1) % log_interval == 0 or j == n_runs - 1:
                 vals_str = "  ".join(f"{v:{col_w}.4f}" for v in row)
-                print(f"{i+1:6d}  {vals_str}  {n_gal:8d}  {dt_ms:7.1f}")
+                print(f"{i_glob:6d}  {vals_str}  {n_gal:8d}  {dt_ms:7.1f}")
 
     elapsed = time.time() - t_total
     print(f"\nFinished {n_runs} runs in {elapsed:.1f} s  "
@@ -454,17 +511,63 @@ def _parse_args() -> argparse.Namespace:
         help="Run the prepare_sim step before generating HODs",
     )
     parser.add_argument(
+        "--prepare_only",
+        action="store_true",
+        help="Run ONLY the prepare_sim step, then exit (submit this once "
+             "before launching a job array)",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print per-halo verbose output from AbacusHOD",
+    )
+    parser.add_argument(
+        "--start",
+        type=int,
+        default=0,
+        help="First (global) table row to process  (default: 0)",
+    )
+    parser.add_argument(
+        "--end",
+        type=int,
+        default=None,
+        help="One past the last table row to process  (default: all rows)",
+    )
+    parser.add_argument(
+        "--shard",
+        type=int,
+        default=None,
+        help="Shard index in [0, nshards) — computes --start/--end "
+             "automatically (use with --nshards; e.g. pass "
+             "$SLURM_ARRAY_TASK_ID from a job array)",
+    )
+    parser.add_argument(
+        "--nshards",
+        type=int,
+        default=None,
+        help="Total number of shards (use with --shard)",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
+
+    if args.prepare_only:
+        prepare_simulation(args.path2config)
+        return
     if args.prepare_sim:
         prepare_simulation(args.path2config)
+
+    start, end = args.start, args.end
+    if (args.shard is None) != (args.nshards is None):
+        raise SystemExit("--shard and --nshards must be given together")
+    if args.shard is not None:
+        if args.start != 0 or args.end is not None:
+            raise SystemExit("Use either --shard/--nshards or --start/--end, not both")
+        n_total = len(np.load(args.params))
+        start, end = _shard_range(n_total, args.shard, args.nshards)
+
     generate_hod_samples(
         path2config=args.path2config,
         params_file=args.params,
@@ -472,6 +575,8 @@ def main() -> None:
         Nthread=args.Nthread,
         want_rsd=not args.no_rsd,
         verbose=args.verbose,
+        start=start,
+        end=end,
     )
 
 

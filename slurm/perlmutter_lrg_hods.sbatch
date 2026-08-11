@@ -1,5 +1,9 @@
 #!/bin/bash
-# NERSC Perlmutter batch script for LRG HOD generation.
+# NERSC Perlmutter batch script for LRG HOD generation — SERIAL fallback.
+#
+# Prefer slurm/perlmutter_lrg_hods_array.sbatch: the task is embarrassingly
+# parallel across table rows, and the job array finishes in ~1 h of
+# wall-clock instead of ~10+ h (same node-hours charged either way).
 #
 # First-ever run for a given box + redshift: set EXTRA_FLAGS="--prepare_sim"
 # below so the halo subsamples get built before the HOD loop

@@ -339,13 +339,24 @@ you want (z = 0.5 matches Ivanov+2024).
 
 ### Submit
 
+The generation is embarrassingly parallel across table rows and runs as a
+SLURM **job array** (16 shards × ~1 h; short jobs also backfill much
+faster in the queue than one long job):
+
 ```bash
-sbatch slurm/perlmutter_lrg_hods.sbatch
+# once per box + redshift — builds halo subsamples, wait for it to finish:
+sbatch slurm/perlmutter_prepare_sim.sbatch
+
+# then the array (finishes in ~1 h of wall-clock):
+sbatch slurm/perlmutter_lrg_hods_array.sbatch
 ```
 
-On the **first run** for a given box + redshift, set
-`EXTRA_FLAGS="--prepare_sim"` inside the sbatch script so the halo
-subsamples are built (written to `subsample_dir`, reused afterwards).
+Each array task writes per-run `.npy` catalogs named by **global row
+index** (no collisions) and its own `lrg_hods_rowsSTART-END.hdf5` shard;
+the `row_index` dataset in each shard maps entries back to table rows.
+To change the shard count, edit both `--array=0-15` and `NSHARDS=16`.
+A serial fallback (`slurm/perlmutter_lrg_hods.sbatch`) runs all rows in
+one job (~10+ h).
 
 ### Storage warning
 
