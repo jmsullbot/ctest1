@@ -69,32 +69,36 @@ Embarrassingly parallel across rows — shard over a SLURM job array
 
 Output files
 ------------
-    output/lrg_hods.hdf5       – HDF5 with all runs; random-access per run
-    output/catalogs/000000.npy – per-run structured NumPy array
+    output/catalogs/000000.npy – per-run structured NumPy array; this is
+                                 where ALL galaxy data lives (named by
+                                 global table row, so shards never collide)
+    output/lrg_hods.hdf5       – small metadata index ONLY (~MB): run →
+                                 parameters → galaxy count.  No per-galaxy
+                                 data.  Sharded runs write
+                                 lrg_hods_rowsSTART-END.hdf5 each.
 
-HDF5 layout
------------
+HDF5 layout (metadata only)
+---------------------------
     /
-    ├── attrs          n_runs, param_names, want_rsd, sim_name, z_mock,
-    │                  params_file
+    ├── attrs          n_runs, n_runs_total, row_start, row_end,
+    │                  param_names, want_rsd, sim_name, z_mock, params_file
     ├── params         [n_runs × 12]  AbacusHOD parameters per run
     │   └── attrs      columns = param_names
-    ├── nbar           [n_runs]  target number density [(Mpc/h)^{-3}]
-    ├── logsigma       [n_runs]  log10(σ) as supplied in the input file
+    ├── row_index      [n_runs]  global table row of each entry
+    ├── nbar           [n_runs]  number density column from the input table
+    ├── logsigma       [n_runs]  log10(σ) as supplied in the input table
     ├── n_gal          [n_runs]  realised galaxy count per run
-    ├── fixed_params/
-    │   └── attrs      s_v, s_p, s_r, ic
-    └── catalogs/
-        ├── 000000/
-        │   ├── attrs  logM_cut … Bsat, nbar, logsigma, n_gal
-        │   ├── x      [n_gal]  comoving x [Mpc/h]  real-space
-        │   ├── y      [n_gal]  comoving y [Mpc/h]  real-space
-        │   ├── z      [n_gal]  comoving z [Mpc/h]  real-space
-        │   ├── z_rsd  [n_gal]  redshift-space z [Mpc/h]  (if want_rsd)
-        │   ├── vx/vy/vz  [n_gal]  peculiar velocities [km/s]
-        │   ├── mass   [n_gal]  host halo mass [Msun/h]
-        │   └── id     [n_gal]  host halo id
-        └── …
+    └── fixed_params/
+        └── attrs      s_v, s_p, s_r, ic
+
+Per-run .npy layout  (load with cat = np.load("catalogs/000042.npy"))
+-------------------
+1-D structured array, one element per galaxy.  Fields:
+    x, y, z   comoving position [Mpc/h]  (real-space)
+    z_rsd     redshift-space z  [Mpc/h]  (only when want_rsd)
+    vx/vy/vz  peculiar velocity [km/s]
+    mass      host halo mass    [Msun/h]
+    id        host halo id
 """
 
 import argparse
@@ -403,8 +407,7 @@ def generate_hod_samples(
         for k, v in _FIXED_PARAMS.items():
             grp_fixed.attrs[k] = v
 
-        ds_ngal  = hf.create_dataset("n_gal", shape=(n_runs,), dtype=np.int64)
-        grp_cats = hf.create_group("catalogs")
+        ds_ngal = hf.create_dataset("n_gal", shape=(n_runs,), dtype=np.int64)
 
         # ------------------------------------------------------------------
         # Main loop — j is the local index, i_glob the global table row
@@ -439,22 +442,8 @@ def generate_hod_samples(
                         np.asarray(_z), np.asarray(_vz), z_mock
                     )
 
-            grp = grp_cats.create_group(f"{i_glob:06d}")
-            for name, val in params_i.items():
-                grp.attrs[name] = float(val)
-            grp.attrs["logsigma"]  = float(logsigma_arr[j])
-            grp.attrs["nbar"]      = float(nbar_arr[j])
-            grp.attrs["n_gal"]     = n_gal
-            grp.attrs["row_index"] = i_glob
-
-            for field in _CATALOG_FIELDS:
-                arr = lrg_cat.get(field)
-                if arr is not None and len(arr) > 0:
-                    grp.create_dataset(field, data=arr, compression="lzf")
-
-            if z_rsd_arr is not None:
-                grp.create_dataset("z_rsd", data=z_rsd_arr, compression="lzf")
-
+            # Galaxy data goes ONLY to the per-run .npy file; the HDF5 is a
+            # small metadata index (params, n_gal, nbar, logsigma, row_index)
             _save_catalog_npy(npy_dir / f"{i_glob:06d}.npy", lrg_cat, z_rsd_arr)
 
             if j == 0 or (j + 1) % log_interval == 0 or j == n_runs - 1:
@@ -466,8 +455,9 @@ def generate_hod_samples(
           f"({elapsed / n_runs * 1e3:.1f} ms/run)")
     print(f"N_LRG  min={n_gals.min()}  max={n_gals.max()}  "
           f"median={int(np.median(n_gals))}")
-    print(f"HDF5   : {out_path}  ({out_path.stat().st_size / 1e9:.3f} GB)")
-    print(f"NPY    : {npy_dir}/  ({n_runs} files)")
+    print(f"HDF5   : {out_path}  (metadata only, "
+          f"{out_path.stat().st_size / 1e6:.2f} MB)")
+    print(f"NPY    : {npy_dir}/  ({n_runs} files — all galaxy data)")
 
 
 # ---------------------------------------------------------------------------

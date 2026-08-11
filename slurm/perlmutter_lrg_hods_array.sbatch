@@ -2,12 +2,13 @@
 # LRG HOD generation as a SLURM job array — the recommended way to run.
 #
 # The 10500 table rows are split into NSHARDS disjoint chunks; each array
-# task processes one chunk on its own node (~40-60 min for 16 shards at
+# task processes one chunk on its own node (~20-40 min for 16 shards at
 # the eq. (74) number densities on the base box).  Short walltime requests
 # backfill quickly in the Perlmutter queue.
 #
-# Tasks never conflict: per-run .npy catalogs are named by global row
-# index, and each task writes its own lrg_hods_rowsSTART-END.hdf5.
+# Tasks never conflict: per-run .npy catalogs (which hold ALL galaxy data)
+# are named by global row index, and each task writes its own small
+# metadata-only lrg_hods_rowsSTART-END.hdf5.
 #
 # Prerequisite: run slurm/perlmutter_prepare_sim.sbatch once first.
 #
@@ -19,7 +20,7 @@
 #SBATCH -q regular
 #SBATCH -N 1
 #SBATCH -c 256               # whole CPU node: 128 physical cores x 2 HT
-#SBATCH -t 01:30:00
+#SBATCH -t 01:00:00
 #SBATCH --array=0-15
 #SBATCH -o lrg_hods_%A_%a.out
 

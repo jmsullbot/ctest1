@@ -340,38 +340,40 @@ you want (z = 0.5 matches Ivanov+2024).
 ### Submit
 
 The generation is embarrassingly parallel across table rows and runs as a
-SLURM **job array** (16 shards × ~1 h; short jobs also backfill much
-faster in the queue than one long job):
+SLURM **job array** (16 shards × ~20–40 min, 1 h walltime request; short
+jobs also backfill much faster in the queue than one long job):
 
 ```bash
 # once per box + redshift — builds halo subsamples, wait for it to finish:
 sbatch slurm/perlmutter_prepare_sim.sbatch
 
-# then the array (finishes in ~1 h of wall-clock):
+# then the array (finishes in well under an hour of wall-clock):
 sbatch slurm/perlmutter_lrg_hods_array.sbatch
 ```
 
 Each array task writes per-run `.npy` catalogs named by **global row
-index** (no collisions) and its own `lrg_hods_rowsSTART-END.hdf5` shard;
-the `row_index` dataset in each shard maps entries back to table rows.
-To change the shard count, edit both `--array=0-15` and `NSHARDS=16`.
-A serial fallback (`slurm/perlmutter_lrg_hods.sbatch`) runs all rows in
-one job (~10+ h).
+index** (no collisions) and its own small metadata-only
+`lrg_hods_rowsSTART-END.hdf5` shard; the `row_index` dataset in each
+shard maps entries back to table rows. To change the shard count, edit
+both `--array=0-15` and `NSHARDS=16`. A serial fallback
+(`slurm/perlmutter_lrg_hods.sbatch`) runs all rows in one job (~5–8 h).
 
 ### Storage warning
 
 With the base (2 Gpc/h)³ box and the Ivanov+2024 number densities
-(median n̄ ≈ 1.1×10⁻³ (Mpc/h)⁻³ → ~9M galaxies/run, up to 66M), saving
-full catalogs for all 10500 runs costs roughly **8 TB in `.npy` plus the
-same again in HDF5** — a large fraction of the default 20 TB `$PSCRATCH`
-quota, and `$PSCRATCH` is purged (~8 weeks). Consider computing your
-summary statistics inside the loop instead of keeping every catalog, or
-keeping catalogs for a subset of rows only.
+(median n̄ ≈ 1.1×10⁻³ (Mpc/h)⁻³ → ~9M galaxies/run, up to 66M), the
+per-run `.npy` catalogs for all 10500 runs total roughly **8 TB** —
+a large fraction of the default 20 TB `$PSCRATCH` quota, and `$PSCRATCH`
+is purged (~8 weeks). Consider computing your summary statistics inside
+the loop instead of keeping every catalog, or keeping catalogs for a
+subset of rows only.
 
 ## Output
 
-Identical structure to the QSO pipeline: one HDF5 file with all runs and
-metadata (plus per-run `nbar`/`logsigma`), and per-run structured `.npy`
-catalogs in `catalogs/NNNNNN.npy` with fields
+All galaxy data lives in the per-run structured `.npy` catalogs
+(`catalogs/NNNNNN.npy`, named by global table row) with fields
 `x, y, z, z_rsd, vx, vy, vz, mass, id` (real-space positions; `z_rsd`
-computed plane-parallel along z at `z_mock`).
+computed plane-parallel along z at `z_mock`). The HDF5 file is a small
+**metadata-only index** (a few MB): the parameter table, `row_index`,
+`n_gal`, `nbar`, `logsigma`, and the run configuration — no per-galaxy
+datasets.
