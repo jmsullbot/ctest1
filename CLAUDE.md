@@ -36,6 +36,23 @@ or job-submission changes.
    are HPSS-tape only), so check before submitting. Same principle for any
    other data or software: no collaboration-gated sources.
 
+## Dependency gotchas
+
+- **Corrfunc is mandatory even though we never compute clustering.**
+  `abacusnbody/hod/abacus_hod.py` line ~23 imports
+  `..analysis.tpcf_corrfunc` at *module level*, and that module raises
+  `ImportError` if Corrfunc is absent. So `from abacusnbody.hod.abacus_hod
+  import AbacusHOD` fails outright; no config flag avoids it. Only
+  `calc_xirppi_fast` / `calc_wp_fast` / `calc_multipole_fast` actually use
+  it, and those live in `compute_*` methods this pipeline never calls.
+  Install with `conda install -c conda-forge corrfunc` — **not** pip,
+  which builds from source and needs GSL ≥ 2.4 plus a compiler. Corrfunc
+  is deliberately absent from `requirements.txt` so a build failure can't
+  abort the whole pip step.
+- `prepare_sim` does **not** import Corrfunc, so the prep job can succeed
+  while every generation task fails. Preflight checks in
+  `slurm/_common.sh` must cover what the *generation* step imports.
+
 ## Platform
 
 - NERSC **Perlmutter** (not Harvard Cannon — an earlier version of the

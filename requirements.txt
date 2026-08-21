@@ -3,3 +3,11 @@ numpy>=1.23
 scipy>=1.7       # for scipy.stats.qmc (LatinHypercube) and truncnorm
 h5py>=3.7
 pyyaml>=6.0
+
+# Corrfunc is required to import AbacusHOD (abacusnbody.hod.abacus_hod has a
+# module-level import of ..analysis.tpcf_corrfunc), even though this pipeline
+# never computes clustering.  It is NOT listed as a dependency here on
+# purpose: pip builds it from source and needs GSL >= 2.4 plus a compiler, so
+# a failure would abort this whole file.  Install it separately with
+#     conda install -c conda-forge corrfunc
+# (slurm/setup_env.sh does this for you).

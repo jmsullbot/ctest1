@@ -117,9 +117,28 @@ fi
 echo "Python     : $(command -v python)"
 
 # --- 4. Verify dependencies -------------------------------------------------
+# Checked here so a broken env fails once, at job start, rather than once per
+# array task after each has already loaded simulation data.
 if ! python -c "import numpy, h5py, yaml" 2>/dev/null; then
-    echo "ERROR: the active environment is missing dependencies." >&2
-    echo "       Install them with:" >&2
-    echo "         pip install -r $REPO_DIR/requirements.txt" >&2
+    echo "ERROR: the active environment is missing core dependencies." >&2
+    echo "       pip install -r $REPO_DIR/requirements.txt" >&2
+    exit 1
+fi
+
+# abacusnbody.hod.abacus_hod imports Corrfunc unconditionally at module level
+# (via ..analysis.tpcf_corrfunc), even though we never compute clustering.
+# find_spec is cheap and avoids paying the numba import cost here.
+if ! python -c "import importlib.util as u, sys; sys.exit(0 if u.find_spec('Corrfunc') else 1)" 2>/dev/null; then
+    echo "ERROR: Corrfunc is not installed." >&2
+    echo "" >&2
+    echo "       AbacusHOD cannot be imported without it: abacus_hod.py has a" >&2
+    echo "       module-level 'from ..analysis.tpcf_corrfunc import ...', and" >&2
+    echo "       that module raises ImportError when Corrfunc is absent.  We" >&2
+    echo "       never call the clustering routines, but the import still runs." >&2
+    echo "" >&2
+    echo "       Install it into '$CONDA_ENV' (prebuilt, pulls GSL):" >&2
+    echo "         conda install -c conda-forge -y corrfunc" >&2
+    echo "       Building from source instead needs GSL >= 2.4 and a compiler:" >&2
+    echo "         pip install Corrfunc" >&2
     exit 1
 fi

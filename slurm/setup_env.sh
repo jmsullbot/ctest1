@@ -82,19 +82,48 @@ echo
 echo "Installing dependencies from requirements.txt…"
 pip install -r requirements.txt
 
+# Corrfunc is deliberately NOT in requirements.txt: pip builds it from source
+# and needs GSL >= 2.4 plus a working compiler, which fails on many clusters
+# and would take the whole pip step down with it.  Install it from conda-forge
+# (prebuilt, pulls GSL) and only fall back to pip.
+#
+# It is required even though this pipeline never computes clustering:
+# abacusnbody.hod.abacus_hod imports ..analysis.tpcf_corrfunc at module level,
+# which raises ImportError when Corrfunc is missing.
+if python -c "import Corrfunc" 2>/dev/null; then
+    echo
+    echo "Corrfunc already present."
+else
+    echo
+    echo "Installing Corrfunc (needed to import AbacusHOD)…"
+    if ! conda install -c conda-forge -y corrfunc; then
+        echo "conda-forge install failed; falling back to pip (needs GSL + compiler)…"
+        pip install Corrfunc
+    fi
+fi
+
 echo
 echo "Verifying…"
 python - <<'PY'
 import importlib, sys
 print(f"  python      {sys.version.split()[0]}  ({sys.executable})")
 missing = []
-for mod in ("numpy", "scipy", "h5py", "yaml", "abacusnbody"):
+for mod in ("numpy", "scipy", "h5py", "yaml", "Corrfunc", "abacusnbody"):
     try:
         m = importlib.import_module(mod)
         print(f"  {mod:11s} {getattr(m, '__version__', 'ok')}")
     except ImportError as exc:
         print(f"  {mod:11s} MISSING — {exc}")
         missing.append(mod)
+
+# The real test: this is the import every array task performs.
+try:
+    from abacusnbody.hod.abacus_hod import AbacusHOD  # noqa: F401
+    print("  AbacusHOD   importable")
+except Exception as exc:
+    print(f"  AbacusHOD   FAILED — {type(exc).__name__}: {exc}")
+    missing.append("abacusnbody.hod.abacus_hod")
+
 sys.exit(1 if missing else 0)
 PY
 
