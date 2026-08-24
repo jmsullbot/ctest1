@@ -435,3 +435,21 @@ computed plane-parallel along z at `z_mock`). The HDF5 file is a small
 **metadata-only index** (a few MB): the parameter table, `row_index`,
 `n_gal`, `nbar`, `logsigma`, and the run configuration — no per-galaxy
 datasets.
+
+### Sharing results with another NERSC user
+
+```bash
+bash slurm/share_dir.sh <their_username> $PSCRATCH/lrg_hods
+bash slurm/share_dir.sh <their_username> $PSCRATCH/lrg_hods --check   # diagnose only
+```
+
+Grants read access via user ACLs on the target tree **and every ancestor
+directory you own** — Unix needs execute permission on every path
+component, and `$PSCRATCH/<user>` is created `0700`, so a recursive
+`chmod` on the data directory alone is never enough. Also sets a default
+ACL (new files inherit) and repairs the ACL mask, which a `chmod` run
+after `setfacl` silently clobbers. Prints exactly which component still
+blocks access, if any.
+
+Note `$PSCRATCH` is purged (~8 weeks) and not backed up — for durable
+sharing use CFS (`/global/cfs/cdirs/<project>/`).
