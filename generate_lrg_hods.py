@@ -546,8 +546,32 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _check_config_placeholders(path2config: str) -> None:
+    """Refuse to run if sim_params still contains unfilled <u>/<user> paths.
+
+    Only *values* are checked (comments in the YAML legitimately mention the
+    placeholder), so a filled-in config passes.  Catches the otherwise cryptic
+    "PermissionError: Permission denied: '/pscratch/sd/<u>'" from prepare_sim.
+    """
+    with open(path2config) as fh:
+        cfg = yaml.safe_load(fh)
+    bad = {
+        k: v for k, v in (cfg.get("sim_params") or {}).items()
+        if isinstance(v, str) and ("<u>" in v or "<user>" in v)
+    }
+    if bad:
+        listing = "\n".join(f"         {k}: {v}" for k, v in bad.items())
+        raise SystemExit(
+            f"ERROR: {path2config} still contains placeholder paths:\n{listing}\n"
+            f"       Fill in your scratch path first (run from the repo root):\n"
+            f'         sed -i "s|/pscratch/sd/<u>/<user>|$PSCRATCH|g" {path2config}\n'
+            f"       then check:  grep -n subsample_dir {path2config}"
+        )
+
+
 def main() -> None:
     args = _parse_args()
+    _check_config_placeholders(args.path2config)
 
     if args.prepare_only:
         prepare_simulation(args.path2config)
