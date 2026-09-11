@@ -229,3 +229,32 @@ for i in sel[:5]:
 - **`sigma` vs `logsigma`**: the `params` column is `10**logsigma`.
 - **`$PSCRATCH` is purged** (~8 weeks) and is not backed up. Move anything
   you intend to keep to CFS.
+
+---
+
+## 5. Cosmology and growth factors at z = 0.5
+
+Both boxes (`base_c000_ph000`, `small_c000_ph3000`) share the fiducial
+`c000` cosmology and an identical growth history:
+
+| Quantity | Value | Notes |
+|---|---|---|
+| Ω_m, Ω_DE | 0.315192, 0.684808 | flat; ω_b = 0.02237, ω_cdm = 0.12, ω_ncdm = 0.0006442 (one 0.06 eV ν), n_s = 0.9649, w = −1 |
+| z_init | 99 | IC density field is δ at this redshift |
+| **D(z=0.5) / D(z=0)** | **0.769424** | linear growth relative to today |
+| **D(z=0.5) / D(z_init)** | **59.911485** | multiply the `ic_dens` field by this to get δ_lin at z = 0.5 |
+| `Growth` (D with D→a at early times) | 0.606627 | Abacus's own normalisation; D(z=0) ≈ 0.7884 in this convention |
+| **f(z=0.5) = dlnD/dlna** | **0.759070** | for RSD / Kaiser; Ω_m(z=0.5)^0.55 = 0.761 as a check |
+| E(z=0.5) = H/H₀ | 1.322339 | `HubbleNow` in the header |
+
+These come from the simulation headers, which abacusutils bundles — no file
+access needed:
+
+```python
+from abacusnbody.metadata import get_meta
+m = get_meta("AbacusSummit_base_c000_ph000", redshift=0.5)
+m["Growth"], m["f_growth"], m["GrowthTable"]     # GrowthTable: {z: D(z)}, D(z_init)=1
+```
+
+The same header (with `GrowthTable`) sits inside every `halo_info_*.asdf`
+and in the IC file, as `af["header"]`.
