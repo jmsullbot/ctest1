@@ -102,6 +102,18 @@ or job-submission changes.
 - Small boxes have particle subsamples at z = 1.4, 1.1, 0.8, 0.5, 0.2.
   Phases ph3000–ph4999 are irregularly numbered (some absent) — `ls` the
   public path before assuming a phase exists.
+- **Small boxes live under `<root>/small/`** (and their cleaning under
+  `<root>/cleaning/small/<sim>/`), per abacusutils'
+  `compaso_halo_catalog._setup_file_paths`. `sim_dir` for a small run is
+  therefore `<root>/small/`, not `<root>/`. A bare
+  `ls <root>/AbacusSummit_small_…` fails with "No such file" for this
+  reason, not because the box is absent.
+- `prepare_sim` reads only `halo_info`, `halo_rv_A`, `field_rv_A` (no B
+  subsamples, no PIDs) plus `cleaning/…/{cleaned_halo_info,cleaned_rvpid}`.
+  `slurm/globus_fetch_small.sh` transfers exactly that set from the public
+  AbacusSummit Globus collection (found by display name; UUIDs are not
+  hardcoded — docs.nersc.gov and abacusnbody.org are egress-blocked from
+  the sandbox, so they were never verified here).
 - Same cell size across boxes means N_small = N_base / 4 for any mesh
   (576³↔144³, 1152³↔288³, 1024³↔256³). Match cell size, not N.
 - The sbatch scripts take `CONFIG=` and `OUTDIR=` overrides via

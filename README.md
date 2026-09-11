@@ -462,13 +462,33 @@ volume, so catalog `NNNNNN` corresponds row-for-row to the base run.
 Output goes to its own directory (`$PSCRATCH/lrg_hods_small/`) and never
 touches the base-box catalogs.
 
+Small boxes sit under a **`small/` subdirectory** of the AbacusSummit tree
+(`<root>/small/<sim>/halos/z0.500/`, cleaning under
+`<root>/cleaning/small/<sim>/z0.500/`), so `sim_dir` points at
+`<root>/small/`. Check the phase is staged on disk first:
+
 ```bash
 sed -i "s|/pscratch/sd/<u>/<user>|$PSCRATCH|g" config/lrg_hod_small.yaml
-ls /global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/AbacusSummit_small_c000_ph3000/halos/   # confirm z0.500 exists
+ls /global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/small/ | head           # which phases exist?
+ls /global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/small/AbacusSummit_small_c000_ph3000/halos/
 
 sbatch slurm/perlmutter_prepare_sim_small.sbatch       # once; minutes
 sbatch slurm/perlmutter_lrg_hods_small_array.sbatch    # 4 tasks, ~5–15 min each
 ```
+
+If the phase is **not** on disk, fetch just its z = 0.5 products (a few GB)
+from the public AbacusSummit Globus collection into your scratch:
+
+```bash
+pip install globus-cli && globus login                # once
+bash slurm/globus_fetch_small.sh --list               # phases available on the collection
+bash slurm/globus_fetch_small.sh                      # transfer ph3000 (SIM=... for another)
+# then in config/lrg_hod_small.yaml:  sim_dir: '$PSCRATCH/AbacusSummit/small/'
+```
+
+The script transfers only what `prepare_sim` reads — `halo_info`,
+`halo_rv_A`, `field_rv_A` and the `cleaning/` tree — mirroring the official
+layout so abacusutils' cleaned-catalog auto-detection works unchanged.
 
 Expect ~64× fewer galaxies per catalog (median ~1.4×10⁵, ~130 GB total)
 and possibly empty catalogs at high `logM_cut` — a 500 Mpc/h box has few

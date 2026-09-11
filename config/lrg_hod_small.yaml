@@ -31,11 +31,23 @@
 sim_params:
     sim_name: 'AbacusSummit_small_c000_ph3000'   # 500 Mpc/h, fiducial cosmology, phase 3000
 
-    # PUBLIC NERSC copy -- readable by all NERSC users (the /public/ component
-    # is what makes it open; 'desi' in the path is just where it is hosted).
-    sim_dir: '/global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/'
+    # SMALL BOXES LIVE UNDER A small/ SUBDIRECTORY in the AbacusSummit tree:
+    #     <root>/small/AbacusSummit_small_c000_ph3000/halos/z0.500/...
+    #     <root>/cleaning/small/AbacusSummit_small_c000_ph3000/z0.500/...
+    # so sim_dir must point at <root>/small/ (AbacusHOD opens
+    # sim_dir/<sim_name>/halos/z0.500; the cleaned catalogs are found by
+    # searching upward for <root>/cleaning/).  Check it is on disk:
+    #     ls /global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/small/
+    #
+    # Option A -- public NERSC copy (readable by all NERSC users):
+    sim_dir: '/global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/small/'
     # Faster read-only mount of the same data for compute-node jobs:
-    # sim_dir: '/dvs_ro/cfs/cdirs/desi/public/cosmosim/AbacusSummit/'
+    # sim_dir: '/dvs_ro/cfs/cdirs/desi/public/cosmosim/AbacusSummit/small/'
+    #
+    # Option B -- if the phase you want is not staged on disk, fetch just
+    # its z=0.5 products (a few GB) with  bash slurm/globus_fetch_small.sh
+    # and point here instead:
+    # sim_dir: '/pscratch/sd/<u>/<user>/AbacusSummit/small/'
 
     output_dir: '/pscratch/sd/<u>/<user>/lrg_hods_small/mocks/'          # only used if write_to_disk=True
     subsample_dir: '/pscratch/sd/<u>/<user>/lrg_hods_small/subsamples/'  # prepare_sim output
