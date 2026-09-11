@@ -87,6 +87,26 @@ or job-submission changes.
   that was removed deliberately; it doubled runtime and storage.
 - Full run at base-box densities is ~8 TB of `.npy`. Flag this before
   suggesting anything that increases it.
+- The HDF5 attrs carry `box_size` (Mpc/h, read from `ball.lbox`). Shards
+  from the *first* base-box run predate this attribute — readers must fall
+  back to 2000 when it is absent. Never hardcode the box size.
+
+## Small-box companion run
+
+- `config/lrg_hod_small.yaml` + `slurm/perlmutter_prepare_sim_small.sbatch`
+  + `slurm/perlmutter_lrg_hods_small_array.sbatch` regenerate the **same
+  10500 rows** on `AbacusSummit_small_c000_ph3000` (500 Mpc/h, 1728³
+  particles, same particle mass as base, 64× less volume). Output goes to
+  `$PSCRATCH/lrg_hods_small/`, never the base directory. Catalog `NNNNNN`
+  corresponds row-for-row across the two runs.
+- Small boxes have particle subsamples at z = 1.4, 1.1, 0.8, 0.5, 0.2.
+  Phases ph3000–ph4999 are irregularly numbered (some absent) — `ls` the
+  public path before assuming a phase exists.
+- Same cell size across boxes means N_small = N_base / 4 for any mesh
+  (576³↔144³, 1152³↔288³, 1024³↔256³). Match cell size, not N.
+- The sbatch scripts take `CONFIG=` and `OUTDIR=` overrides via
+  `--export=ALL,...`; AbacusHOD writes subsamples under
+  `subsample_dir/<sim_name>/z0.500/`, so different sims never collide.
 
 ## Working style
 

@@ -46,13 +46,14 @@ else
     exit 1
 fi
 
+CONFIG="${CONFIG:-config/lrg_hod.yaml}"
 OUTDIR="${OUTDIR:-$PSCRATCH/lrg_hods}"
 mkdir -p "$OUTDIR"
 
 NSHARDS=16                   # must match the --array range above
 
 python generate_lrg_hods.py \
-    --path2config config/lrg_hod.yaml \
+    --path2config "$CONFIG" \
     --params      lrg_params_eq74.npy \
     --output      "$OUTDIR/lrg_hods.hdf5" \
     --Nthread     128 \

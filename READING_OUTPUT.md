@@ -10,6 +10,18 @@ Output lives in `$PSCRATCH/lrg_hods/` and comes in two parts:
 The join between them is the run number: run `N` in the parameter table is
 `catalogs/{N:06d}.npy`, and appears in whichever HDF5 shard covers row `N`.
 
+There may be two such directories, produced from the **same parameter
+table** so catalogs correspond row-for-row:
+
+| Run | Box | Directory | Shard files | Box side |
+|---|---|---|---|---|
+| base | `AbacusSummit_base_c000_ph000` | `$PSCRATCH/lrg_hods/` | `lrg_hods_rows*.hdf5` | 2000 Mpc/h |
+| small | `AbacusSummit_small_c000_ph3000` | `$PSCRATCH/lrg_hods_small/` | `lrg_hods_small_rows*.hdf5` | 500 Mpc/h |
+
+Read the box side from the `box_size` attribute rather than hardcoding it
+(see §3). Small-box catalogs have ~64× fewer galaxies for the same HOD
+parameters, and rows with high `logM_cut` may legitimately be empty.
+
 ---
 
 ## 1. A single catalog
@@ -133,11 +145,14 @@ import h5py
 import numpy as np
 
 rows, pars, ngals = [], [], []
-for fn in sorted(glob.glob("lrg_hods_rows*.hdf5")):
+for fn in sorted(glob.glob("*_rows*.hdf5")):          # base: lrg_hods_rows*, small: lrg_hods_small_rows*
     with h5py.File(fn, "r") as f:
         rows.append(f["row_index"][:])
         pars.append(f["params"][:])
         ngals.append(f["n_gal"][:])
+        # Box side [Mpc/h]. Shards written before this attribute existed
+        # (the first base-box run) lack it -> fall back to the base box.
+        L_BOX = float(f.attrs.get("box_size", 2000.0))
 
 rows, pars, ngals = map(np.concatenate, (rows, pars, ngals))
 order = np.argsort(rows)
@@ -155,9 +170,8 @@ its rows are absent and this trips.
 density is a *measured output* of each HOD run, not an input. Compute it:
 
 ```python
-L_BOX = 2000.0                       # Mpc/h, AbacusSummit base box
-nbar  = ngals / L_BOX ** 3           # (Mpc/h)^-3
-
+nbar = ngals / L_BOX ** 3            # (Mpc/h)^-3; L_BOX read from the HDF5 above
+                                     # (2000 for the base box, 500 for a small box)
 print(f"median {np.median(nbar):.3e}, range {nbar.min():.3e} .. {nbar.max():.3e}")
 ```
 
@@ -174,13 +188,12 @@ import glob
 import h5py
 import numpy as np
 
-L_BOX = 2000.0
-
 # Build the run table once
 rows, pars, ngals = [], [], []
-for fn in sorted(glob.glob("lrg_hods_rows*.hdf5")):
+for fn in sorted(glob.glob("*_rows*.hdf5")):
     with h5py.File(fn, "r") as f:
-        cols = list(f["params"].attrs["columns"])
+        cols  = list(f["params"].attrs["columns"])
+        L_BOX = float(f.attrs.get("box_size", 2000.0))   # Mpc/h (fallback: base box)
         rows.append(f["row_index"][:])
         pars.append(f["params"][:])
         ngals.append(f["n_gal"][:])

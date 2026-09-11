@@ -453,3 +453,38 @@ blocks access, if any.
 
 Note `$PSCRATCH` is purged (~8 weeks) and not backed up — for durable
 sharing use CFS (`/global/cfs/cdirs/<project>/`).
+
+### Small-box companion run (500 Mpc/h)
+
+A separate, cheap regeneration of the **same 10500 HODs** on an
+AbacusSummit `small` box — same particle mass as the base box, 64× less
+volume, so catalog `NNNNNN` corresponds row-for-row to the base run.
+Output goes to its own directory (`$PSCRATCH/lrg_hods_small/`) and never
+touches the base-box catalogs.
+
+```bash
+sed -i "s|/pscratch/sd/<u>/<user>|$PSCRATCH|g" config/lrg_hod_small.yaml
+ls /global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/AbacusSummit_small_c000_ph3000/halos/   # confirm z0.500 exists
+
+sbatch slurm/perlmutter_prepare_sim_small.sbatch       # once; minutes
+sbatch slurm/perlmutter_lrg_hods_small_array.sbatch    # 4 tasks, ~5–15 min each
+```
+
+Expect ~64× fewer galaxies per catalog (median ~1.4×10⁵, ~130 GB total)
+and possibly empty catalogs at high `logM_cut` — a 500 Mpc/h box has few
+>10¹⁵ M☉/h halos. The HDF5 shards record the box side in the `box_size`
+attribute so readers don't hardcode 2000 vs 500 (see `READING_OUTPUT.md`).
+
+To run another phase, copy the config, change `sim_name`, and pass
+`CONFIG=`/`OUTDIR=` overrides — phases ph3000–ph4999 are irregularly
+numbered, so check the directory exists first:
+
+```bash
+sbatch --export=ALL,CONFIG=config/lrg_hod_small_ph3001.yaml \
+       slurm/perlmutter_prepare_sim_small.sbatch
+sbatch --export=ALL,CONFIG=config/lrg_hod_small_ph3001.yaml,OUTDIR=$PSCRATCH/lrg_hods_small_ph3001 \
+       slurm/perlmutter_lrg_hods_small_array.sbatch
+```
+
+Matching a mesh across boxes means keeping the **cell size**, not N:
+N_small = N_base / 4 (576³ ↔ 144³, 1152³ ↔ 288³, 1024³ ↔ 256³).

@@ -1,0 +1,105 @@
+# AbacusHOD configuration — LRG HODs on an AbacusSummit SMALL box (500 Mpc/h)
+#
+# A separate, cheap companion to the base-box run (config/lrg_hod.yaml).
+# Same 10500-row parameter table (lrg_params_eq74.npy), same redshift, same
+# cosmology -- only the box changes, so catalog NNNNNN here corresponds
+# row-for-row to catalog NNNNNN from the base run.
+#
+# Small boxes: 500 Mpc/h, 1728^3 particles at the SAME particle mass as the
+# base boxes (64x less volume).  Particle subsamples exist at z = 1.4, 1.1,
+# 0.8, 0.5, 0.2.  Phases run ph3000..ph4999 but the numbering is irregular
+# (some phases failed and are absent), so confirm yours is on disk:
+#
+#     ls /global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/AbacusSummit_small_c000_ph3000/halos/
+#
+# Expect ~64x fewer galaxies per catalog than the base run (median ~1.4e5,
+# max ~1e6; ~130 GB for all 10500 runs).  Rows with high logM_cut (~14) can
+# legitimately yield very few or zero galaxies -- a 500 Mpc/h box contains
+# few >1e15 Msun/h halos.  The pipeline handles n_gal = 0.
+#
+# To run a second phase: copy this file, change sim_name, and submit with a
+# different OUTDIR (see slurm/perlmutter_lrg_hods_small_array.sbatch).
+# Subsamples never collide: AbacusHOD writes them to
+# subsample_dir/<sim_name>/z0.500/.
+#
+# Replace <u>/<user> in the scratch paths with your username.
+
+
+# ---------------------------------------------------------------------------
+# Simulation parameters
+# ---------------------------------------------------------------------------
+sim_params:
+    sim_name: 'AbacusSummit_small_c000_ph3000'   # 500 Mpc/h, fiducial cosmology, phase 3000
+
+    # PUBLIC NERSC copy -- readable by all NERSC users (the /public/ component
+    # is what makes it open; 'desi' in the path is just where it is hosted).
+    sim_dir: '/global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/'
+    # Faster read-only mount of the same data for compute-node jobs:
+    # sim_dir: '/dvs_ro/cfs/cdirs/desi/public/cosmosim/AbacusSummit/'
+
+    output_dir: '/pscratch/sd/<u>/<user>/lrg_hods_small/mocks/'          # only used if write_to_disk=True
+    subsample_dir: '/pscratch/sd/<u>/<user>/lrg_hods_small/subsamples/'  # prepare_sim output
+    z_mock: 0.5                                  # same snapshot as the base run (Ivanov+2024)
+    cleaned_halos: True                          # use cleaned halo catalogs (recommended)
+
+
+# ---------------------------------------------------------------------------
+# prepare_sim settings  (used only when running with --prepare_sim / --prepare_only)
+# ---------------------------------------------------------------------------
+prepare_sim:
+    Nparallel_load: 5
+    Nthread_per_load: 'auto'
+
+
+# ---------------------------------------------------------------------------
+# HOD parameters  -- identical to the base-box run
+# ---------------------------------------------------------------------------
+HOD_params:
+    want_ranks: True            # satellite profile flexibility via rank-ordering (enables s)
+    want_AB: True               # assembly bias (enables Acent, Asat, Bcent, Bsat)
+    density_sigma: 3            # scale radius [Mpc/h] for local density environment
+    want_rsd: False             # always False here; z_rsd computed explicitly in the script
+    write_to_disk: False        # keep False — the script handles all I/O
+
+    tracer_flags:
+        LRG: True
+        ELG: False
+        QSO: False
+
+    # Placeholder LRG params used only to initialise AbacusHOD.
+    # The script overwrites all 12 varied params at each row of the input table.
+    LRG_params:
+        # --- fixed (not in the input table) ---
+        s_v:      0.0
+        s_p:      0.0
+        s_r:      0.0
+        ic:       1.0
+
+        # --- varied (overwritten per row; placeholder values below) ---
+        logM_cut: 13.35
+        logM1:    14.20
+        sigma:    0.37
+        alpha:    1.0
+        kappa:    0.04
+        alpha_c:  0.0
+        alpha_s:  1.0
+        s:        0.0
+        Acent:    0.0
+        Asat:     0.0
+        Bcent:    0.0
+        Bsat:     0.0
+
+
+# ---------------------------------------------------------------------------
+# Clustering parameters
+# (Required by the AbacusHOD constructor but not used during catalog
+#  generation.  Leave the defaults as-is.)
+# ---------------------------------------------------------------------------
+clustering_params:
+    clustering_type: 'xirppi'
+    bin_params:
+        logmin: -0.77288
+        logmax:  1.47712
+        nbins: 8
+    pimax: 30
+    pi_bin_size: 5

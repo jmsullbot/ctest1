@@ -355,7 +355,12 @@ def generate_hod_samples(
     print("Loading simulation subsamples…")
     t0 = time.time()
     ball = AbacusHOD(sim_params, HOD_params, clustering_params)
-    print(f"Loaded in {time.time() - t0:.1f} s\n")
+    print(f"Loaded in {time.time() - t0:.1f} s")
+
+    # Box side length [Mpc/h], read from the simulation header by AbacusHOD.
+    # Stored in the HDF5 so readers never have to hardcode 2000 vs 500.
+    box_size = float(getattr(ball, "lbox", np.nan))
+    print(f"Box size         : {box_size:g} Mpc/h\n")
 
     # Warm-up run (triggers JIT compilation)
     print("Warm-up run (JIT compilation)…")
@@ -393,6 +398,7 @@ def generate_hod_samples(
         hf.attrs["want_rsd"]     = want_rsd
         hf.attrs["sim_name"]     = sim_params.get("sim_name", "unknown")
         hf.attrs["z_mock"]       = z_mock
+        hf.attrs["box_size"]     = box_size          # Mpc/h
         hf.attrs["params_file"]  = str(Path(params_file).name)
 
         ds = hf.create_dataset("params", data=abacus_params)
