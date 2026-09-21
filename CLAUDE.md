@@ -143,3 +143,23 @@ or job-submission changes.
   set the satellite count), not only `logM_cut`/`logM1`/`logsigma`.
   Matching on the latter three alone does not reproduce `nbar`; rank on
   measured `nbar` and `f_sat` via `find_nearest_hod.py --hdf5-dir`.
+
+## Initial conditions
+
+- The public disk copy has **no `ic/` directory** for `base_c000_ph000`,
+  and the HPSS copy (`/nersc/projects/desi/cosmosim/Abacus/`) returns
+  `HPSS_EACCES` for this user. The ICs were obtained via the Globus web
+  interface and live at (user-chosen, not the official layout):
+      `$PSCRATCH/abacus_ics_000/`        base: `ic_{dens,disp}_N{576,1152,2048}.asdf`
+      `$PSCRATCH/small_abacus_ics_000/`  small: `ic_{dens,disp}_N576.asdf`
+  plus `checksums.crc32` in each. `check_ics.py` verifies and inspects them.
+- **N means cells across the box, so N576 is 3.47 Mpc/h on the base box
+  but 0.87 Mpc/h on the small box.** The small N576 has no cell-matched
+  base partner (that would be N144, not shipped); closest is base N2048
+  (0.98 Mpc/h). Coarsen a GRF by k-space truncation, never by real-space
+  averaging.
+- The bundled header (abacusutils metadata) carries the full IC recipe:
+  `ZD_Seed = 12321`, `ZD_Version = 2`, `ZD_NumBlock = 384`, z_init = 99,
+  PLT on, and the CLASS input spectrum — so the field can in principle be
+  regenerated with the public zeldovich-PLT code if a box's ICs are ever
+  unavailable (unverified whether reduced-N output is phase-identical).
