@@ -115,6 +115,12 @@ def main():
     ap.add_argument("--window", choices=["gauss", "tophat"], default="gauss")
     ap.add_argument("--out", default="perr_fit.png")
     ap.add_argument("--title", default=None)
+    ap.add_argument("--kplot", type=float, default=None,
+                    help="max k to DISPLAY (default: kmax). Data beyond kmax are shown; the "
+                         "kmax fit is extrapolated as a dashed line")
+    ap.add_argument("--box", type=float, default=None,
+                    help="box side [Mpc/h]; with --nmesh draws k_Nyq and k_Nyq/2")
+    ap.add_argument("--nmesh", type=int, default=256)
     args = ap.parse_args()
 
     k, y_real, mu_c, edges, y_rsd, nbar = load(args.real, args.rsd)
@@ -139,17 +145,38 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    kk = np.geomspace(k.min(), args.kmax, 400)
+    kplot = args.kplot or args.kmax
+    kk  = np.geomspace(k.min(), args.kmax, 400)          # fitted range: solid
+    kx  = np.geomspace(args.kmax, max(kplot, args.kmax * 1.001), 400)   # extrapolation: dashed
     fig, ax = plt.subplots(figsize=(7.2, 5.0))
     blues = plt.cm.Blues(np.linspace(0.45, 0.95, nmu))
+    show = k <= kplot
 
-    ax.plot(k, y_real, "o", ms=3.5, color="k", label="real space")
-    ax.plot(kk, model(kk, *popt, 0.0, 0.0, args.window), "-", color="k", lw=1.6)
+    def curve(c, m1, m2):
+        ax.plot(kk, model(kk, *popt, m1, m2, args.window), "-", color=c, lw=1.6)
+        if kplot > args.kmax:
+            ax.plot(kx, model(kx, *popt, m1, m2, args.window), "--", color=c, lw=1.2, alpha=0.8)
+
+    ax.plot(k[show], y_real[show], "o", ms=3.5, color="k", label="real space")
+    curve("k", 0.0, 0.0)
     for j in range(nmu):
-        ax.plot(k, y_rsd[:, j], "o", ms=3.5, color=blues[j],
+        ax.plot(k[show], y_rsd[show, j], "o", ms=3.5, color=blues[j],
                 label=rf"$\mu \in [{edges[j]:.2f},\,{edges[j+1]:.2f}]$")
-        ax.plot(kk, model(kk, *popt, edges[j], edges[j + 1], args.window), "-", color=blues[j], lw=1.6)
+        curve(blues[j], edges[j], edges[j + 1])
     ax.axhline(1.0, color="0.6", lw=0.8, ls=":")
+    if kplot > args.kmax:
+        ax.axvline(args.kmax, color="0.4", lw=0.9, ls="-.")
+        ax.text(args.kmax * 1.03, 0.02, r"$k_{\max}$ (fit)", color="0.3", fontsize=8.5,
+                transform=ax.get_xaxis_transform(), va="bottom")
+    if args.box:
+        kny = np.pi * args.nmesh / args.box
+        if kny <= kplot * 1.2:
+            ax.axvline(kny, color="crimson", lw=1, ls="--")
+            ax.axvline(kny / 2, color="crimson", lw=0.8, ls=":")
+            ax.text(kny * 0.97, 0.98, r"$k_{\rm Nyq}$", color="crimson", ha="right", va="top",
+                    transform=ax.get_xaxis_transform(), fontsize=9)
+            ax.text(kny / 2 * 0.97, 0.98, r"$k_{\rm Nyq}/2$", color="crimson", ha="right", va="top",
+                    transform=ax.get_xaxis_transform(), fontsize=8)
 
     ax.set_xscale("log")
     ax.set_xlabel(r"$k\ [h\,\mathrm{Mpc}^{-1}]$")
@@ -163,7 +190,8 @@ def main():
     ax.text(0.03, 0.03, txt, transform=ax.transAxes, va="bottom", ha="left", fontsize=9,
             bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9))
     ax.legend(loc="upper left", fontsize=9, frameon=False)
-    ax.set_xlim(k.min() * 0.9, args.kmax * 1.05)
+    ax.set_xlim(k.min() * 0.9, kplot * 1.05)
+    ax.set_ylim(min(0.0, np.nanmin(y_rsd[show]) - 0.05), max(1.15, np.nanmax(y_rsd[show]) + 0.05))
     ax.grid(alpha=0.25, which="both")
     fig.tight_layout()
     fig.savefig(args.out, dpi=160)
