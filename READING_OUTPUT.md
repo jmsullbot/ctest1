@@ -112,6 +112,8 @@ with h5py.File("lrg_hods_rows000000-000657.hdf5", "r") as f:
 | `params` | (n_runs, 12) | HOD parameters; column names in `.attrs["columns"]` |
 | `row_index` | (n_runs,) | global table row — the link to `catalogs/NNNNNN.npy` |
 | `n_gal` | (n_runs,) | galaxies actually produced |
+| `n_cent` | (n_runs,) | number of centrals — **the first `n_cent` rows of the `.npy` are centrals, the rest satellites** (runs after 2026-09-21 only; see §6 for older runs) |
+| `f_sat` | (n_runs,) | satellite fraction `1 − n_cent/n_gal` (same caveat) |
 | `nbar` | (n_runs,) | **NaN by design** — see below |
 | `logsigma` | (n_runs,) | log10(σ) from the input table |
 | attrs | — | `n_runs`, `n_runs_total`, `row_start`, `row_end`, `param_names`, `want_rsd`, `sim_name`, `z_mock`, `params_file` |
@@ -222,6 +224,9 @@ for i in sel[:5]:
 
 - **`nbar` is NaN** in the parameter table and HDF5 — derive it from
   `n_gal / L_box**3`.
+- **There is no central/satellite flag column.** The split is positional:
+  the first `n_cent` galaxies are centrals. Catalogs generated before
+  `n_cent` was recorded need `compute_fsat.py` to recover it (§6).
 - **Filenames use the global row**, not a per-shard index, so
   `catalogs/009999.npy` is table row 9999 regardless of which array task
   produced it.
@@ -258,3 +263,45 @@ m["Growth"], m["f_growth"], m["GrowthTable"]     # GrowthTable: {z: D(z)}, D(z_i
 
 The same header (with `GrowthTable`) sits inside every `halo_info_*.asdf`
 and in the IC file, as `af["header"]`.
+
+---
+
+## 6. Centrals, satellites and `f_sat`
+
+AbacusHOD does not label galaxies. It returns the split as a single number,
+`Ncent`, with the convention that **the first `Ncent` entries of the catalog
+are centrals and everything after is a satellite** (`abacusnbody/hod/
+abacus_hod.py`, `run_hod` docstring). So:
+
+```python
+with h5py.File("lrg_hods_rows000000-000657.hdf5", "r") as f:
+    k      = np.where(f["row_index"][:] == 42)[0][0]
+    n_cent = int(f["n_cent"][k])
+cat  = np.load("catalogs/000042.npy", mmap_mode="r")
+cens = cat[:n_cent]
+sats = cat[n_cent:]
+f_sat = len(sats) / len(cat)
+```
+
+### Runs made before `n_cent` was recorded
+
+The first base-box and small-box runs pre-date the `n_cent`/`f_sat`
+datasets. Recover them once per run directory:
+
+```bash
+python compute_fsat.py $PSCRATCH/lrg_hods           # -> $PSCRATCH/lrg_hods/fsat_table.npz
+python compute_fsat.py $PSCRATCH/lrg_hods_small
+```
+
+It reads only the `id` column (memory-mapped, fast) and uses the fact that
+both blocks are written in halo order: halo id is non-decreasing through
+the centrals, **drops** at the first satellite, then is non-decreasing
+again. Exactly one drop ⇒ clean recovery; the summary reports how many
+rows fell into each class, and rows that violate the assumption get
+`f_sat = NaN` rather than a wrong number. (Counting unique halo ids would
+*not* work: LRG satellites in AbacusHOD are not conditioned on a central
+being present, so some halos host satellites only.)
+
+`fsat_table.npz` fields, indexed by global row: `row, n_gal, n_cent,
+f_sat, n_drops`. `find_nearest_hod.py --fsat … --hdf5-dir <dir>` picks it
+up automatically when the shards lack `f_sat`.

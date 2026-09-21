@@ -127,3 +127,19 @@ or job-submission changes.
 - Deliver the repo as a zip (`git archive`) — the user does not use
   GitHub keys on Perlmutter.
 - Development happens on branch `old_LRG`; push there.
+
+## Centrals / satellites
+
+- AbacusHOD returns the cen/sat split only as a scalar `Ncent`: **the
+  first `Ncent` galaxies of a catalog are centrals**, the rest satellites.
+  There is no per-galaxy flag. `generate_lrg_hods.py` now records
+  `n_cent` and `f_sat` in the HDF5; the first base and small runs predate
+  this and need `compute_fsat.py`, which recovers `Ncent` from the single
+  drop in the halo-id sequence at the cen→sat boundary (validated per row
+  by counting drops). Do not recover it by counting unique halo ids — LRG
+  satellites are not conditioned on a central existing (only ELG are), so
+  that undercounts.
+- `nbar` depends on *all* occupation parameters (`alpha`, `kappa`, `logM1`
+  set the satellite count), not only `logM_cut`/`logM1`/`logsigma`.
+  Matching on the latter three alone does not reproduce `nbar`; rank on
+  measured `nbar` and `f_sat` via `find_nearest_hod.py --hdf5-dir`.

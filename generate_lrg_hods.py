@@ -88,6 +88,9 @@ HDF5 layout (metadata only)
     ├── nbar           [n_runs]  number density column from the input table
     ├── logsigma       [n_runs]  log10(σ) as supplied in the input table
     ├── n_gal          [n_runs]  realised galaxy count per run
+    ├── n_cent         [n_runs]  number of centrals; the FIRST n_cent rows of
+    │                            the .npy catalog are centrals, rest satellites
+    ├── f_sat          [n_runs]  satellite fraction 1 - n_cent/n_gal
     └── fixed_params/
         └── attrs      s_v, s_p, s_r, ic
 
@@ -413,7 +416,11 @@ def generate_hod_samples(
         for k, v in _FIXED_PARAMS.items():
             grp_fixed.attrs[k] = v
 
-        ds_ngal = hf.create_dataset("n_gal", shape=(n_runs,), dtype=np.int64)
+        ds_ngal  = hf.create_dataset("n_gal",  shape=(n_runs,), dtype=np.int64)
+        # AbacusHOD returns the central/satellite split as a scalar: the FIRST
+        # n_cent galaxies of the catalog are centrals, the rest satellites.
+        ds_ncent = hf.create_dataset("n_cent", shape=(n_runs,), dtype=np.int64)
+        ds_fsat  = hf.create_dataset("f_sat",  shape=(n_runs,), dtype=np.float64)
 
         # ------------------------------------------------------------------
         # Main loop — j is the local index, i_glob the global table row
@@ -436,8 +443,11 @@ def generate_hod_samples(
 
             lrg_cat = mock_dict.get("LRG", {})
             n_gal   = int(len(lrg_cat.get("x", [])))
-            n_gals[j]  = n_gal
-            ds_ngal[j] = n_gal
+            n_cent  = int(lrg_cat.get("Ncent", 0))
+            n_gals[j]   = n_gal
+            ds_ngal[j]  = n_gal
+            ds_ncent[j] = n_cent
+            ds_fsat[j]  = (1.0 - n_cent / n_gal) if n_gal > 0 else np.nan
 
             z_rsd_arr: np.ndarray | None = None
             if want_rsd and n_gal > 0:
