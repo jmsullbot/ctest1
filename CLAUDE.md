@@ -163,3 +163,21 @@ or job-submission changes.
   PLT on, and the CLASS input spectrum — so the field can in principle be
   regenerated with the public zeldovich-PLT code if a box's ICs are ever
   unavailable (unverified whether reduced-N output is phase-identical).
+
+## Field-level P_err results (hod 2155, z=0.5)
+
+- `fit_perr.py` / `compare_perr.py` plot n̄P_err(k,μ) and fit
+  1 − D·W(kR)·exp(−k²μ²ℓ_F²), W = exp(−k²R²/2) by default (top-hat
+  optional); μ-bin factor averaged analytically over the bin; bins
+  weighted σ ∝ 1/k (no per-bin errors are stored). Result files are
+  pickled object arrays: real `[k, P_err, P_true, P_model, r, …, nbar]`,
+  RSD `[k, mu_centers, P_err(k,μ), P_true, P_model, r, …, nbar]`.
+- **N_mesh = 256 on the base box puts k_Nyq = 0.402 exactly at
+  k_max = 0.4.** The apparent n̄P_err > 1 in the highest-μ bin there is a
+  mass-assignment/Nyquist artifact, confirmed by the small box
+  (k_Nyq = 1.61, same HOD row): at k ∈ [0.3, 0.4] the small box gives
+  real/μ1/μ2/μ3 = 0.70/0.71/0.79/0.91 vs base 0.79/0.80/0.90/1.07 — all
+  bins inflated on base, the LOS bin most. Base ℓ_F drifts with k_max
+  (4.4→6.1); small is stable at ≈3.7 Mpc/h. Use N_mesh ≥ 512 (ideally
+  1024, cell-matched to small 256) on the base box for k_max = 0.4, or
+  cut base to k_max ≈ 0.2. R is unconstrained at these resolutions.
