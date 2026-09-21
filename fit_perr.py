@@ -101,9 +101,10 @@ def fit(k, y_real, edges, y_rsd, kmax, kind):
     p0 = [0.3, 3.0, 3.0]
     popt, pcov = curve_fit(f, X, Y, p0=p0, sigma=sigma, absolute_sigma=False,
                            bounds=([0, 0, 0], [1, 50, 50]), maxfev=20000)
-    resid = (Y - f(X, *popt)) / sigma
-    chi2 = float(np.sum(resid**2)); dof = len(Y) - 3
-    return popt, np.sqrt(np.diag(pcov)), chi2, dof, len(Y)
+    resid = Y - f(X, *popt)
+    rms = float(np.sqrt(np.mean(resid**2)))                    # unweighted, in n̄P units
+    wrms = float(np.sqrt(np.sum((resid / sigma)**2) / np.sum(1 / sigma**2)))   # mode-weighted
+    return popt, np.sqrt(np.diag(pcov)), rms, wrms, len(Y)
 
 
 # --------------------------------------------------------------------------
@@ -122,15 +123,16 @@ def main():
     results = {}
     for kind in ("gauss", "tophat"):
         results[kind] = fit(k, y_real, edges, y_rsd, args.kmax, kind)
-    popt, perr, chi2, dof, npts = results[args.window]
+    popt, perr, rms, wrms, npts = results[args.window]
 
-    print(f"nbar = {nbar:.4e} (Mpc/h)^-3   kmax = {args.kmax}   points = {npts}   dof = {dof}")
+    print(f"nbar = {nbar:.4e} (Mpc/h)^-3   kmax = {args.kmax}   points = {npts}   (3 parameters)")
     print(f"μ bins: " + ", ".join(f"[{edges[j]:.3f},{edges[j+1]:.3f}]" for j in range(nmu)))
+    print("weights: σ_i ∝ 1/k_i (mode counting); errors are from the covariance, scaled by the residual")
     print()
-    for kind, (p, e, c2, d, _) in results.items():
+    for kind, (p, e, r, wr, _) in results.items():
         tag = "<- plotted" if kind == args.window else ""
         print(f"W = {kind:6s}  D = {p[0]:.4f} ± {e[0]:.4f}   ℓ_F = {p[1]:.3f} ± {e[1]:.3f} Mpc/h   "
-              f"R = {p[2]:.3f} ± {e[2]:.3f} Mpc/h   χ²/dof = {c2:.1f}/{d} (relative)  {tag}")
+              f"R = {p[2]:.3f} ± {e[2]:.3f} Mpc/h   rms resid = {r:.4f} (mode-weighted {wr:.4f})  {tag}")
 
     # ---------------- plot ----------------
     import matplotlib
