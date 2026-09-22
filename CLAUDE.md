@@ -181,3 +181,31 @@ or job-submission changes.
   (4.4→6.1); small is stable at ≈3.7 Mpc/h. Use N_mesh ≥ 512 (ideally
   1024, cell-matched to small 256) on the base box for k_max = 0.4, or
   cut base to k_max ≈ 0.2. R is unconstrained at these resolutions.
+
+## Running lrgs.py (field-level bias) over all HODs
+
+- `lrgs.py` (the user's transfer-function script, lives with their Hi-Fi_mocks
+  setup) calls `CurrentMPIComm.get()`, so `srun -n N python lrgs.py` makes
+  nbodykit treat the N ranks as ONE distributed computation. **Never launch it
+  under srun/mpirun for throughput.** Instead run N *separate* single-rank
+  python processes — each gets its own singleton MPI_COMM_WORLD. The work is
+  embarrassingly parallel across catalogs.
+- Corollary: a single catalog cannot span nodes, but the ENSEMBLE can —
+  `slurm/perlmutter_lrgs_array.sbatch` runs one pool per node via a job array.
+- `run_lrgs_parallel.sh` is the pool runner (xargs -P). Set OMP/MKL/OPENBLAS
+  threads to 1 — N processes already fill the node. Default workers =
+  min(physical cores, mem/8GB) ≈ 64 on a 512 GB CPU node; only 4 outside a
+  SLURM allocation, since login nodes are shared.
+- lrgs.py skips entries whose output already exists, so the whole thing is
+  resumable and safe to re-run; `--status`, `--dry-run`, `--retry-failed`.
+- `lrgs_hoist.diff` moves 9 of 25 per-catalog `FFTPower` calls out of the two
+  loops (they depend only on the shifted fields, not the catalog): real-space
+  pd1/pd2ort/pdG2ort/pd3ort, RSD pz/pd1ort/pd2ort/pG2ort/pd3ort, plus the
+  constant `dz - 3/7 f dG2par`. ~36% fewer FFTs, numerically identical. Also
+  clamps the batch range to the catalogs that exist (a batch_size not dividing
+  10500 otherwise crashes the last batch) and fixes `start` being reused for
+  both the timer and the batch offset, which made every "elapsed time" print
+  meaningless.
+- Bash gotcha hit while writing the runner: `local a=$1 b=...${a}...` expands
+  all arguments before assigning any, so `${a}` is empty. Use separate `local`
+  statements — otherwise every worker shares one log file.
