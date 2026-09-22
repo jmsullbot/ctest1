@@ -209,3 +209,14 @@ or job-submission changes.
 - Bash gotcha hit while writing the runner: `local a=$1 b=...${a}...` expands
   all arguments before assigning any, so `${a}` is empty. Use separate `local`
   statements — otherwise every worker shares one log file.
+- **Small box:** `small_lrgs.py` is byte-identical to `lrgs.py` apart from
+  `BoxSize=500`, the two paths, and `AbacusBase/ph=000` → `AbacusSmall/ph=3000`
+  in the output names — so `lrgs_hoist.diff` applies to it unchanged
+  (`small_lrgs_hoist.diff` is the same patch pre-rebased). Run it with
+  `slurm/perlmutter_lrgs_small_array.sbatch`, which sets SCRIPT/CATDIR/
+  RESULTSDIR and `RESULT_TAG=AbacusSmall` (the runner's `--status` globs
+  `results_${RESULT_TAG}_*`, so the wrong tag silently reports 0 done).
+- The small box is NOT 64× cheaper here: same `Nmesh=256` grid, so identical
+  FFT work per catalog; only painting and I/O shrink (~60-70% of base-box
+  time). It is much lighter on memory though, so `MEM_PER_WORKER_GB=4`
+  lets the runner use roughly twice as many workers per node.

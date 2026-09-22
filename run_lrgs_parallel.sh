@@ -39,6 +39,7 @@ SCRIPT="${SCRIPT:-lrgs.py}"
 BATCH_SIZE="${BATCH_SIZE:-50}"
 CATDIR="${CATDIR:-/pscratch/sd/j/jsull/lrg_hods/catalogs}"
 RESULTSDIR="${RESULTSDIR:-/pscratch/sd/j/jsull/qso_sbp/Heavy_files_Andrej/AbacusBase/results}"
+RESULT_TAG="${RESULT_TAG:-AbacusBase}"   # output filename tag: AbacusBase | AbacusSmall
 LOGDIR="${LOGDIR:-logs_lrgs}"
 CONDA_ENV="${CONDA_ENV:-nbodykit_env_25}"
 MEM_PER_WORKER_GB="${MEM_PER_WORKER_GB:-8}"
@@ -96,8 +97,8 @@ REMAINDER=$(( NCAT % BATCH_SIZE ))
 
 status() {
     local nr nd
-    nr=$(find "$RESULTSDIR" -maxdepth 1 -name 'results_AbacusBase_*.npy' 2>/dev/null | wc -l)
-    nd=$(find "$RESULTSDIR" -maxdepth 1 -name 'results_RSD_AbacusBase_*.npy' 2>/dev/null | wc -l)
+    nr=$(find "$RESULTSDIR" -maxdepth 1 -name "results_${RESULT_TAG}_*.npy" 2>/dev/null | wc -l)
+    nd=$(find "$RESULTSDIR" -maxdepth 1 -name "results_RSD_${RESULT_TAG}_*.npy" 2>/dev/null | wc -l)
     printf '  real-space outputs : %6d / %d\n' "$nr" "$NCAT"
     printf '  RSD outputs        : %6d / %d\n' "$nd" "$NCAT"
 }
@@ -105,6 +106,7 @@ status() {
 echo "=================================================================="
 echo " catalogs      : $NCAT in $CATDIR"
 echo " batches       : $NBATCH of $BATCH_SIZE"
+echo " script        : $SCRIPT   (result tag: $RESULT_TAG)"
 echo " results dir   : $RESULTSDIR"
 status
 echo "=================================================================="
