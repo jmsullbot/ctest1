@@ -15,7 +15,9 @@
 # out or you cancel it, just resubmit -- finished catalogs are not redone.
 #
 # Tuning:
-#   --array=0-7        number of nodes (adjust to taste / queue limits)
+#   --array=0-15       number of NODES (one node per array task; -N 1 is per
+#                      task and must stay 1 -- the pool runs on one node only).
+#                      NSHARDS is derived from the array range automatically.
 #   NWORKERS           processes per node (default: min(physical cores,
 #                      mem/8GB) ~= 64 on a 512 GB Perlmutter CPU node)
 #   MEM_PER_WORKER_GB  raise if you see OOM; the biggest catalogs are ~3 GB
@@ -32,8 +34,8 @@
 #SBATCH -q regular
 #SBATCH -N 1
 #SBATCH -c 256
-#SBATCH -t 06:00:00
-#SBATCH --array=0-7
+#SBATCH -t 00:30:00
+#SBATCH --array=0-15
 #SBATCH -o lrgs_%A_%a.out
 
 # Directory holding lrgs.py (and slurm/env.local.sh for the conda settings).
