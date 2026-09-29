@@ -49,6 +49,11 @@ if [[ ! -f run_lrgs_parallel.sh ]]; then
     exit 1
 fi
 
+# Batch size must be matched to nodes x workers or most workers idle:
+# 12 ~ 10500 / (16 nodes x 62 workers), and divides 10500.
+# If you change --array, the runner warns and suggests a better value.
+export BATCH_SIZE="${BATCH_SIZE:-12}"
+
 export SHARD="$SLURM_ARRAY_TASK_ID"
 export NSHARDS="$(( ${SLURM_ARRAY_TASK_MAX:-0} - ${SLURM_ARRAY_TASK_MIN:-0} + 1 ))"
 export LOGDIR="${LOGDIR:-logs_lrgs/task_${SLURM_ARRAY_TASK_ID}}"

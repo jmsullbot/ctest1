@@ -216,6 +216,18 @@ or job-submission changes.
   `slurm/perlmutter_lrgs_small_array.sbatch`, which sets SCRIPT/CATDIR/
   RESULTSDIR and `RESULT_TAG=AbacusSmall` (the runner's `--status` globs
   `results_${RESULT_TAG}_*`, so the wrong tag silently reports 0 done).
+- **Batch size must match nodes × workers.** Wall time is set by the busiest
+  worker: ceil(batches_on_node / NWORKERS) rounds of BATCH_SIZE catalogs. On
+  16 nodes, BATCH_SIZE=50 leaves ~14 batches per node, so only ~14 workers run
+  (4.7× slow on base, 9.5× on small, where ~125 workers fit); BATCH_SIZE=10 on
+  base gives 66 batches for 62 workers — a second round, 1.9× slow. Good
+  values are ≈ NCAT/(nodes × workers), rounded up to a divisor of 10500: 12 for
+  base (16×62 or 64×15), 6 for small (16×125). Both sbatch files set these as
+  defaults, and the runner warns with a suggestion when the critical path
+  exceeds 1.5× a balanced split. An earlier claim that batch size "only buys
+  visibility" was wrong — it is the dominant throughput knob on many nodes.
+  Keep BATCH_SIZE explicit (never auto-computed per node): all shards must use
+  the same value, or the stride partition leaves catalogs unprocessed.
 - The small box is NOT 64× cheaper here: same `Nmesh=256` grid, so identical
   FFT work per catalog; only painting and I/O shrink (~60-70% of base-box
   time). It is much lighter on memory though, so `MEM_PER_WORKER_GB=4`

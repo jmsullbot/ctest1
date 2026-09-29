@@ -153,6 +153,32 @@ if [[ $RETRY_FAILED == 1 ]]; then
     echo "retrying ${#BATCHES[@]} previously failed batches"
 fi
 
+# ------------------------------------------------------ efficiency check ---
+# Wall time is set by the busiest worker: ceil(batches_here / NWORKERS)
+# rounds of BATCH_SIZE catalogs each. With many nodes and a large batch,
+# each node gets only a handful of batches, most workers idle, and the busy
+# ones grind through BATCH_SIZE catalogs back-to-back -- so adding nodes
+# stops helping. Warn when the critical path is >1.5x a balanced split.
+if [[ $RETRY_FAILED == 0 && ${#BATCHES[@]} -gt 0 ]]; then
+    slots=$(( NSHARDS * NWORKERS ))
+    rounds=$(( (${#BATCHES[@]} + NWORKERS - 1) / NWORKERS ))
+    crit=$(( rounds * BATCH_SIZE ))
+    if (( 2 * crit * slots > 3 * NCAT )); then
+        ideal=$(( (NCAT + slots - 1) / slots ))
+        best=$ideal
+        for (( d = ideal; d <= 2 * ideal; d++ )); do
+            (( NCAT % d == 0 )) && { best=$d; break; }
+        done
+        busy=$(( ${#BATCHES[@]} < NWORKERS ? ${#BATCHES[@]} : NWORKERS ))
+        slow=$(awk -v c="$crit" -v s="$slots" -v n="$NCAT" 'BEGIN{printf "%.1f", c*s/n}')
+        echo "WARNING: BATCH_SIZE=$BATCH_SIZE is poorly matched to $NSHARDS node(s) x $NWORKERS workers."
+        echo "         This node has ${#BATCHES[@]} batches -> $busy busy workers, $rounds round(s) of"
+        echo "         $BATCH_SIZE catalogs: ~${slow}x longer than a balanced split."
+        echo "         Use BATCH_SIZE=$best (divides $NCAT evenly):  --export=ALL,BATCH_SIZE=$best"
+        echo
+    fi
+fi
+
 echo " workers       : $NWORKERS   (mem/worker ${MEM_PER_WORKER_GB}G, threads 1)"
 echo " this pool     : shard $SHARD of $NSHARDS -> ${#BATCHES[@]} batches"
 echo " logs          : $LOGDIR/batch_<n>.log"

@@ -46,6 +46,11 @@ export RESULTSDIR="${RESULTSDIR:-$PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusSmal
 export RESULT_TAG="${RESULT_TAG:-AbacusSmall}"
 export MEM_PER_WORKER_GB="${MEM_PER_WORKER_GB:-4}"
 
+# Batch size must be matched to nodes x workers or most workers idle:
+# 6 = ceil(10500 / (16 nodes x ~125 workers)), and divides 10500.
+# If you change --array, the runner warns and suggests a better value.
+export BATCH_SIZE="${BATCH_SIZE:-6}"
+
 export SHARD="$SLURM_ARRAY_TASK_ID"
 export NSHARDS="$(( ${SLURM_ARRAY_TASK_MAX:-0} - ${SLURM_ARRAY_TASK_MIN:-0} + 1 ))"
 export LOGDIR="${LOGDIR:-logs_lrgs_small/task_${SLURM_ARRAY_TASK_ID}}"
