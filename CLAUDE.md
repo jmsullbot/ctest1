@@ -232,3 +232,24 @@ or job-submission changes.
   FFT work per catalog; only painting and I/O shrink (~60-70% of base-box
   time). It is much lighter on memory though, so `MEM_PER_WORKER_GB=4`
   lets the runner use roughly twice as many workers per node.
+
+## OPEN ITEM: base-box rerun of lrgs.py at Nmesh = 512 (not done as of 2026-11-04)
+
+- Why: base-box results at Nmesh=256 have k_Nyq = 0.402 = k_max, so k ≳ 0.2
+  is contaminated by the mesh (see "Field-level P_err results"). The small
+  box at 256 is fine (k_Nyq = 1.61) and needs no rerun.
+- Blocker: `shifted_fields_real_N_512_c_0.npy` and
+  `shifted_fields_redshift_axisrsd_2_N_512_c_0.npy` must exist in
+  `$PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusBase/shifted_fields/`. Never
+  confirmed generated. The 256 versions came precomputed in that
+  Heavy_files_Andrej directory. ICs on hand are N576/N1152/N2048 (no 512);
+  512 can be made by k-space truncation of N1152, or use 576 to match an IC
+  grid exactly (~47% more cost). User worried generation won't fit one node.
+- Then: `Nmesh = 256` -> `512` in lrgs.py (one line), and submit with
+  `--export=ALL,NMESH=512,MEM_PER_WORKER_GB=30` (~16 workers/node; ~21 GiB
+  worst case per worker). Either 64 nodes with the default BATCH_SIZE=12 and
+  `-t 03:00:00` (~1.9-2.3 h), or `--array=0-95` with BATCH_SIZE=7 and
+  `-t 02:00:00` (~1.1-1.4 h). An earlier suggested command used BATCH_SIZE=10
+  on 64 nodes, which the runner now flags as ~2x slow -- don't reuse it.
+- Outputs are named `..._Nmesh_512...` and coexist with the 256 results; pass
+  NMESH=512 to `--status` to count them.
