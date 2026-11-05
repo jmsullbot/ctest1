@@ -24,21 +24,35 @@ import os
 import sys
 
 
+def is_sys_path_call(stmt):
+    """True for a statement like sys.path.insert(0, ...) / sys.path.append(...)."""
+    if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+        return False
+    f = stmt.value.func
+    return (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Attribute)
+            and f.value.attr == "path" and isinstance(f.value.value, ast.Name)
+            and f.value.value.id == "sys")
+
+
 def run_imports(script):
+    # Works on Python 3.6+ (nbodykit envs are often 3.7): no ast.get_source_segment
+    # or ast.unparse, which are 3.8+ / 3.9+.
     src = open(script).read()
+    lines = src.splitlines()
     tree = ast.parse(src, script)
     sys.path.insert(0, os.path.dirname(os.path.abspath(script)))  # as `python script.py`
     ns = {"__name__": "__check_generator_env__", "__file__": os.path.abspath(script)}
     ok = True
     for stmt in tree.body:
         is_import = isinstance(stmt, (ast.Import, ast.ImportFrom))
-        is_path_edit = (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
-                        and "sys.path" in (ast.get_source_segment(src, stmt.value.func) or ""))
-        if not (is_import or is_path_edit):
+        if not (is_import or is_sys_path_call(stmt)):
             continue
-        code = ast.get_source_segment(src, stmt) or "<statement>"
+        code = lines[stmt.lineno - 1].strip()
+        mod = ast.Module(body=[stmt])
+        if sys.version_info >= (3, 8):
+            mod.type_ignores = []
         try:
-            exec(compile(ast.Module(body=[stmt], type_ignores=[]), script, "exec"), ns)
+            exec(compile(mod, script, "exec"), ns)
             if is_import:
                 print(f"  ok       line {stmt.lineno:3d}: {code}")
         except BaseException as e:  # ImportError, or anything raised at import time
