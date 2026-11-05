@@ -235,6 +235,21 @@ or job-submission changes.
 
 ## OPEN ITEM: base-box rerun of lrgs.py at Nmesh = 512 (not done as of 2026-11-04)
 
+**Update 2026-11-05: the 512 shifted fields now exist.** Batch job 60856968
+(perlmutter_shifted_fields.sbatch, CPU node, unedited
+my_generate_shifted_fields.py in nbodykit_env_25 + asdf 2.12 + abacusutils
+2.0.1) exited 0 after 169 min.
+- Measured peak: generator RSS 306 GiB, node 327 GiB (60 s samples). It
+  needs a CPU node (476 GiB) and could never fit the 224 GiB GPU nodes. The
+  ×8 extrapolation (~365 GiB) was the right order.
+- The run also REWROTE `shifted_fields_real_N_512_c_0.npy`.
+- **Neither file has been checked yet.** check_shifted_fields.py wasn't in
+  the submit dir (`$PSCRATCH/qso_sbp/Abacus_elg_runs`), so both checks were
+  skipped, yet the sbatch printed "passed the checks". That was a bug, now
+  fixed: it warns at start and ends "NOT verified" when checks are skipped.
+- Next: run the two checks by hand, then lrgs.py at Nmesh=512 (bullets
+  below). Bullets below that predate this update are history.
+
 - Why: base-box results at Nmesh=256 have k_Nyq = 0.402 = k_max, so k ≳ 0.2
   is contaminated by the mesh (see "Field-level P_err results"). The small
   box at 256 is fine (k_Nyq = 1.61) and needs no rerun.

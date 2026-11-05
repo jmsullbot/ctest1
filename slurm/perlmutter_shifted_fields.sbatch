@@ -138,9 +138,11 @@ check() {   # $1 label, $2 file, $3 reference.  Returns 0 ok, 1 problem, 2 skipp
     fi
 }
 
-problems=0
+problems=0; skipped=0
+tally() { case $1 in 1) problems=1 ;; 2) skipped=1 ;; esac; }   # check's return code
+[[ -f "$CHECKER" ]] || echo "WARNING: $CHECKER not found, so the field checks will be SKIPPED."
 check "existing real-space field, before generating" "$real" "$ref_real"
-(( $? == 1 )) && problems=1
+tally $?
 real_before="$(stat -c %Y "$real" 2>/dev/null || echo none)"
 [[ -f "$rsd" ]] && echo "NOTE: $rsd already exists; your generator may skip or overwrite it."
 
@@ -175,11 +177,11 @@ case $rc in
 esac
 
 check "new redshift-space axis-$AXIS field" "$rsd" "$ref_rsd"
-(( $? == 1 )) && problems=1
+tally $?
 if [[ ! -f "$rsd" ]]; then echo "MISSING: $rsd was not written."; problems=1; fi
 if [[ "$(stat -c %Y "$real" 2>/dev/null || echo none)" != "$real_before" ]]; then
     check "real-space field, rewritten by the generator" "$real" "$ref_real"
-    (( $? == 1 )) && problems=1
+    tally $?
 fi
 
 peak="$(awk -F'\t' 'NR > 1 && $2 + 0 > m {m = $2 + 0} END {print m + 0}' "$TRACE")"
@@ -190,4 +192,9 @@ echo "generator exit $rc after $mins min; peak node memory $peak GiB" \
 echo "exact peak: sacct -j $JOB -o JobID,State,Elapsed,MaxRSS"
 if (( rc != 0 )); then exit "$rc"; fi
 if (( problems )); then echo "checks flagged problems: see above"; exit 3; fi
-echo "done: $rsd written and passed the checks"
+if (( skipped )); then
+    echo "done: $rsd written, but NOT verified: checks were skipped (see above)."
+    echo "      python check_shifted_fields.py $rsd $ref_rsd"
+else
+    echo "done: $rsd written and passed the checks"
+fi
