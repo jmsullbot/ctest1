@@ -299,9 +299,24 @@ or job-submission changes.
   - Tested locally with a stand-in generator: the normal, OOM (SIGKILL ->
     137), real-file-rewrite and no-command paths. It has not been run on
     Perlmutter yet.
-- How to restrict the generator to axis 2 and skip real space is unknown.
-  The generator script hasn't been seen here (the 256 run wrote real, then
-  axes 0, 1, 2 in one process).
+- The generator is the user's **`my_generate_shifted_fields.py`**. It takes
+  no arguments; all settings, including Nmesh, are inside the file. It
+  hasn't been seen here yet (the 256 run wrote real, then axes 0, 1, 2 in
+  one process), so axis-2-only edits and its memory hog are unknown. Ask
+  for the file and don't say "your generator" without naming it: the user
+  didn't know what was meant.
+  - It presumably calls `generate_fields_new` / `generate_fields_rsd_new`
+    from `lib/tng_lib.py`. The Hi-Fi_mocks checkout is
+    `$PSCRATCH/Quijote_png/hifimocks_code/Hi-Fi_mocks`; the public repo
+    is andrejobuljen/Hi-Fi_mocks.
+  - The public routines put one particle per cell of `dlin`'s own grid and
+    paint back onto it, so at 512³ they need only ~20–30 GiB (catalog
+    8 GiB + displacements 3 GiB + position-update temporaries). The 224+
+    GiB is therefore elsewhere in the script (IC loading/resampling?). The
+    256 run's 45.65 GiB likewise can't be the routines alone (~3–4 GiB at
+    256), so the ×8 → 365 GiB extrapolation is shaky.
+  - The public `d3_smooth` applies a sharp cutoff at k = 0.5 h/Mpc, and
+    painting uses `compensated=True`.
 - If it still OOMs at 476 GiB, there are two options, and both need the
   generator script:
   - write each field straight to disk with `np.lib.format.open_memmap`
