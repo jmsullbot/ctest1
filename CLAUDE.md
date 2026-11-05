@@ -249,26 +249,61 @@ or job-submission changes.
     file is 3,221,225,600 B = (6, 512³) float32 + 128 B).
   - lrgs.py only reads axis 2 (`axis_rsd=2` is hardcoded), so axes 0/1 at
     512 are not needed.
+  - Integrity is not correctness. The real-space 512 file is verified only
+    to be complete and filled. Whether it is the RIGHT field (same IC phases,
+    operator definitions and normalisation as the 256 file every result
+    used) was unverified as of 2026-11-05.
+  - `check_shifted_fields.py FILE REF` tests that: FFT both files, then
+    compare the shared modes per k-bin via r(k) and power ratio, the low-k
+    r matrix, and per-field verdicts. 22 s and 3.1 GiB at 512 vs 256 (4
+    cores), so it is fine on a login node.
+  - Field order is lrgs.py's unpacking: real `d1, d2, dG2, d3`; redshift
+    `dz, d1, d2, dG2, dG2par, d3`.
+  - Amplitude is tested only for the fields linear in δ1 at low k (d1; dz
+    and d1), in the lowest k-bin with a ±10 % tolerance. A synthetic test
+    (cutoffs 0.8 vs 0.4 h/Mpc) showed why. The nonlinear operators'
+    amplitudes legitimately depend on the grid cutoff: δ² ratio 1.1–1.7 and
+    δ³ ≈ 5, because δ³ ≈ 3σ²δ. Their r stayed 0.93–0.98.
+  - Wrong seed or transposed axes give r ≈ 0. A 0.769 growth error gives
+    ratio 0.59. Permuted fields trip the order check.
 - **Why it is missing: OUT_OF_MEMORY, not a timeout** (sacct, Sep 21–23).
   Interactive sessions 58752877 / 58753239 / 58754046 were OOM-killed after
   20 / 33 / 52 min, each at MaxRSS 224.35 GiB = 99.97 % of their 229802M
   limit. 58752551 was Ctrl-C'd at 15 min and was already at 135 GiB.
-  - Every interactive session had ReqMem 229802M. That is a per-node figure
-    (2 × 89 × 1291, not a multiple of any CPU count), so it is the memory of
-    a whole 256 GB node: almost certainly a GPU node. Not yet confirmed;
-    check with `sacct -j 58754046 -X -o JobID,NodeList,AllocCPUS,AllocTRES%60`.
-    A CPU node gives 487802M = 476 GiB (the lrgs batch job's ReqMem).
+  - Every interactive session had ReqMem 229802M, the memory of a whole
+    256 GB node. **Confirmed GPU node:** 58754046 ran on nid001885 with
+    AllocCPUS 128 and `gres/gpu:a100=4`. A CPU node gives 487802M = 476 GiB
+    (the lrgs batch job's ReqMem). Always request `-C cpu` for this step.
   - The Sep 21 sessions (58699492/58699511/58702726/58702740, presumably
     the 256 generation, since their timing matches the files) peaked at
     45.65 GiB. Scaling ×8 for 512³ gives ~365 GiB, so it should fit a full
     CPU node. This is an extrapolation, not a measurement.
   - An earlier estimate in this session (generation needs only 30–60 GB and
     is "comfortable on one node") was wrong. The user doubted it, correctly.
-- Next step: rerun ONLY the redshift-space step, axis 2 only, on a CPU node
-  (`salloc -N 1 -C cpu -q interactive -t 03:00:00`, or a regular batch
-  job). Log `free -g` every minute so a repeat OOM shows where memory grew.
-  If it still OOMs at 476 GiB, there are two options, and both need the
-  generator script, which hasn't been seen here:
+- Next step: rerun ONLY the redshift-space step, axis 2 only, on a CPU node,
+  as a **batch job**. The user does not want to babysit interactive
+  sessions, so don't suggest salloc for long runs.
+  `slurm/perlmutter_shifted_fields.sbatch` does this. Pass the generator
+  command after the script name; it runs unchanged in the submit
+  directory:
+  `sbatch perlmutter_shifted_fields.sbatch python <generator>.py ...`
+  - It requests `-C cpu -q regular -t 03:00:00`; use `-t 05:00:00` if the
+    generator redoes real space plus axes 0, 1, 2.
+  - It runs check_shifted_fields.py on the real-space file before
+    generating and on the new axis-2 file after.
+  - It logs `[mem]` lines (node used + generator RSS) every minute,
+    interleaved with the generator's output (PYTHONUNBUFFERED=1), and
+    writes the same numbers to `mem_<jobid>.tsv`.
+  - It exits non-zero if the generator fails, the file is missing, or a
+    check flags a problem.
+  - Tested locally with a stand-in generator: the normal, OOM (SIGKILL ->
+    137), real-file-rewrite and no-command paths. It has not been run on
+    Perlmutter yet.
+- How to restrict the generator to axis 2 and skip real space is unknown.
+  The generator script hasn't been seen here (the 256 run wrote real, then
+  axes 0, 1, 2 in one process).
+- If it still OOMs at 476 GiB, there are two options, and both need the
+  generator script:
   - write each field straight to disk with `np.lib.format.open_memmap`
     (float32) and free intermediates;
   - run the generator MPI-distributed over 2 nodes. srun IS the right tool
