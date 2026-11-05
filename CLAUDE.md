@@ -318,10 +318,22 @@ or job-submission changes.
   - The public `d3_smooth` applies a sharp cutoff at k = 0.5 h/Mpc, and
     painting uses `compensated=True`.
   - **Env:** the script imports `asdf` (line 14), which `nbodykit_env_25`
-    lacks. The first batch job (2026-11-05) died on
-    `ModuleNotFoundError: asdf`. Abacus .asdf files can be Blosc-compressed
-    ('blsc'), and plain asdf can't decode those without abacusutils. That is
-    unverified for the IC files.
+    lacked. The first batch job (2026-11-05) died on
+    `ModuleNotFoundError: asdf`. The user then installed asdf 2.12.0 there.
+    The env is Python **3.7.12**, numpy **1.21.6**, at
+    `/global/cfs/projectdirs/m4031/jsull/env/envs/nbodykit_env_25`.
+  - **The IC files ARE Blosc-compressed.** check_generator_env.py on
+    `ic_dens_N576.asdf` gave "not 'blsc'". The decoder comes from
+    abacusutils, whose `[asdf.extensions]` entry point registers it with
+    asdf automatically, so the script itself needs no
+    `import abacusnbody`.
+  - Pin `abacusutils==2.0.1`, the newest release for Python 3.7 (2.1+
+    needs 3.9). Unpinned, pip can quietly fall back to ancient releases
+    (0.3.0 in a sandbox test) that predate the entry point. All 2.0.1
+    deps have cp37 wheels compatible with numpy 1.21.6: numba 0.56.4,
+    astropy 4.3.1, blosc 1.10.6, scipy 1.7.3, h5py 3.8.0, msgpack 1.0.5,
+    parallel-numpy-rng 0.1.2. This was resolved by `pip download`, not
+    tested on a real 3.7 interpreter (uv no longer ships 3.7).
   - Fix: install into `nbodykit_env_25` with pip, keeping numpy pinned so
     nbodykit's compiled extensions (and lrgs.py in the same env) are
     untouched:
