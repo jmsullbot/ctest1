@@ -38,8 +38,11 @@
 #   SFDIR      shifted-fields directory
 #              (default $PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusBase/shifted_fields)
 #   NMESH=512 REF_NMESH=256 AXIS=2 C_IND=0 BOX=2000   which files to check
-#   CONDA_ENV  env with nbodykit (default nbodykit_env_25); ENV_READY=1 skips it
+#   CONDA_ENV  env with nbodykit AND asdf (default nbodykit_env_25); ENV_READY=1
+#              skips activation. slurm/env.local.sh cannot override it.
 #   CHECKER    path to check_shifted_fields.py (default: the submit directory)
+#   GEN_CHECK  path to check_generator_env.py (default: the submit directory);
+#              if present, the job stops in seconds when the env is incomplete
 #   TRACE_SEC  memory sampling interval in seconds (default 60)
 #
 #SBATCH -J shift512
@@ -80,8 +83,12 @@ ref_rsd="$SFDIR/shifted_fields_redshift_axisrsd_${AXIS}_N_${REF_NMESH}_c_${C_IND
 
 # ------------------------------------------- conda (same as run_lrgs_parallel.sh)
 CONDA_ENV="${CONDA_ENV:-nbodykit_env_25}"
+# slurm/env.local.sh is read for CONDA_BASE only. The repo's copy sets
+# CONDA_ENV=abacus (the HOD env, which has no nbodykit), so keep ours.
+want_env="$CONDA_ENV"
 # shellcheck disable=SC1091
 [[ -f slurm/env.local.sh ]] && source slurm/env.local.sh
+CONDA_ENV="$want_env"
 if [[ "${ENV_READY:-0}" != "1" ]]; then
     if [[ -z "${CONDA_BASE:-}" ]]; then
         if [[ -n "${CONDA_EXE:-}" ]]; then
@@ -104,11 +111,19 @@ fi
 echo "=== shifted fields: job $JOB on $(hostname), $(date)"
 echo "node memory : $(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo) GiB physical," \
      "job limit ${SLURM_MEM_PER_NODE:-?} MB, $(nproc) CPUs"
-echo "python      : $(command -v python)"
+echo "python      : $(command -v python)   (conda env: ${CONDA_DEFAULT_ENV:-?})"
 echo "generator   : $*"
 echo "fields dir  : $SFDIR"
 if (( ${SLURM_MEM_PER_NODE:-0} > 0 && ${SLURM_MEM_PER_NODE:-0} < 400000 )); then
     echo "WARNING: this job has under 400 GB; the 512 redshift step needed more than 224 GiB."
+fi
+
+# Fail in seconds, not after the field checks, if this env can't import what
+# the generator needs or can't decode the IC files (check_generator_env.py).
+GEN_CHECK="${GEN_CHECK:-$SUBMIT_DIR/check_generator_env.py}"
+if [[ -f "$GEN_CHECK" && "$1" == python* && "${2:-}" == *.py ]]; then
+    echo; echo "=== environment check for $2"
+    python "$GEN_CHECK" "$2" || { echo "ERROR: this env cannot run $2 (see above); nothing was generated." >&2; exit 4; }
 fi
 
 check() {   # $1 label, $2 file, $3 reference.  Returns 0 ok, 1 problem, 2 skipped.

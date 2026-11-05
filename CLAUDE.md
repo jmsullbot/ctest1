@@ -317,6 +317,23 @@ or job-submission changes.
     256), so the ×8 → 365 GiB extrapolation is shaky.
   - The public `d3_smooth` applies a sharp cutoff at k = 0.5 h/Mpc, and
     painting uses `compensated=True`.
+  - **Env:** the script imports `asdf` (line 14), which `nbodykit_env_25`
+    lacks. The first batch job (2026-11-05) died on
+    `ModuleNotFoundError: asdf`. Abacus .asdf files can be Blosc-compressed
+    ('blsc'), and plain asdf can't decode those without abacusutils. That is
+    unverified for the IC files.
+  - Fix: install into `nbodykit_env_25` with pip, keeping numpy pinned so
+    nbodykit's compiled extensions (and lrgs.py in the same env) are
+    untouched:
+    `python -m pip install asdf "numpy==$(python -c 'import numpy; print(numpy.__version__)')"`
+  - `check_generator_env.py SCRIPT [--ic FILE]` verifies the env on a login
+    node. It runs only the script's sys.path edits and imports (all
+    failures listed at once), then reads values from `ic_dens_N576.asdf` to
+    catch 'blsc'. The sbatch also runs it at job start and exits 4 if it
+    fails.
+  - The sbatch no longer lets `slurm/env.local.sh` (repo copy:
+    `CONDA_ENV=abacus`) override `CONDA_ENV`. Before, an explicit
+    `--export=ALL,CONDA_ENV=...` could be silently replaced.
 - If it still OOMs at 476 GiB, there are two options, and both need the
   generator script:
   - write each field straight to disk with `np.lib.format.open_memmap`
