@@ -263,8 +263,27 @@ my_generate_shifted_fields.py in nbodykit_env_25 + asdf 2.12 + abacusutils
   - tng_lib has two cubic definitions: `d3_smooth` (sharp cut k ≤ 0.5)
     and `generate_fields_new_smooth_cubic` (Gaussian R = 20 Mpc/h, 8
     fields).
-  - Pending: the user's `grep -n "d3\|smooth\|generate_fields\|Nmesh"
-    my_generate_shifted_fields.py`.
+  - The generator (grep, 2026-11-07) does the following:
+    - `Nmesh = 512` (line 28). `dlin = ArrayMesh(IC).paint(Nmesh=Nmesh)`
+      resamples the IC.
+    - Real space: `generate_fields_new_growth` then `orthogonalize`.
+    - Redshift space: a loop over `axis_rsd` calling
+      `generate_fields_rsd_new_growth` (NOT in the public lib, so the
+      user's tng_lib differs) then `orthogonalize_rsd(..., Nmufid)`.
+    - Saves `[d1,d2,dG2,d3]` / `[dz,d1,d2,dG2,dG2par,d3]` with d2/dG2/d3
+      orthogonalized.
+    - Public `generate_fields_new_growth` builds d3 as
+      `d3_smooth(km=0.5)`, a sharp k ≤ 0.5 cut that doesn't depend on
+      Nmesh.
+  - **Conclusion: the 256 files' d3 is a different cubic definition, not a
+    resolution effect.** The synthetic test with a fixed k ≤ 0.5 cubic
+    gives 512/256 std ratios of d1 1.49, d2 2.22, dG2 2.25, d3 1.16. The
+    user's files give 1.66, 2.16, 2.21 and **16.8**. The 512 d3 (std ≈ 2×
+    d1) looks like the k ≤ 0.5 cubic; the 256 d3 (std 0.19× d1) is ~10×
+    too small for it.
+  - So the Sep 21 256 run used another cubic (heavier smoothing?) than the
+    code produces now. Unresolved: what changed (script or tng_lib, Sep
+    21→22), and which cubic the small-box fields used.
   - It matters for comparing base-512 with base-256 and with the small box
     (presumably built with the Sep 21 code), not for d1/d2/dG2.
 - Next: settle the d3 definition, then lrgs.py at Nmesh=512 (bullets
