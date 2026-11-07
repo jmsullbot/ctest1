@@ -247,7 +247,27 @@ my_generate_shifted_fields.py in nbodykit_env_25 + asdf 2.12 + abacusutils
   the submit dir (`$PSCRATCH/qso_sbp/Abacus_elg_runs`), so both checks were
   skipped, yet the sbatch printed "passed the checks". That was a bug, now
   fixed: it warns at start and ends "NOT verified" when checks are skipped.
-- Next: run the two checks by hand, then lrgs.py at Nmesh=512 (bullets
+- **Checks run 2026-11-07** (512 vs 256, both files):
+  - d1 and dz: r = 1.000, power ratio 1.000 at low k. Same ICs, phases,
+    axes and growth. d2, dG2, dG2par: r 0.91–0.99, consistent.
+  - **d3 differs:** r 0.26–0.30 at low k (→0.03–0.07 at k_Nyq), power
+    ratio ~11 (→35–53). Real-space std 0.25 (256) vs 4.24 (512), while the
+    other fields grew only ~2×.
+  - It is NOT just resolution. A synthetic test with the library's
+    definitions (sharp k≤0.5 cubic, per-k-bin orthogonalization, 128³ vs
+    64³ on 500 Mpc/h) reproduces the user's d1/d2/dG2 numbers but gives
+    d3 r ≈ 0.88, ratio ≈ 1.0.
+  - The Sep 22 real 512 file already had the large d3 (slab std 4.3). So
+    the d3 definition changed between the Sep 21 256 run and Sep 22, or
+    the script's cubic smoothing depends on Nmesh.
+  - tng_lib has two cubic definitions: `d3_smooth` (sharp cut k ≤ 0.5)
+    and `generate_fields_new_smooth_cubic` (Gaussian R = 20 Mpc/h, 8
+    fields).
+  - Pending: the user's `grep -n "d3\|smooth\|generate_fields\|Nmesh"
+    my_generate_shifted_fields.py`.
+  - It matters for comparing base-512 with base-256 and with the small box
+    (presumably built with the Sep 21 code), not for d1/d2/dG2.
+- Next: settle the d3 definition, then lrgs.py at Nmesh=512 (bullets
   below). Bullets below that predate this update are history.
 
 - Why: base-box results at Nmesh=256 have k_Nyq = 0.402 = k_max, so k ≳ 0.2
