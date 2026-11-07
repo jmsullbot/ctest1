@@ -282,12 +282,26 @@ my_generate_shifted_fields.py in nbodykit_env_25 + asdf 2.12 + abacusutils
     d1) looks like the k ≤ 0.5 cubic; the 256 d3 (std 0.19× d1) is ~10×
     too small for it.
   - So the Sep 21 256 run used another cubic (heavier smoothing?) than the
-    code produces now. Unresolved: what changed (script or tng_lib, Sep
-    21→22), and which cubic the small-box fields used.
-  - It matters for comparing base-512 with base-256 and with the small box
-    (presumably built with the Sep 21 code), not for d1/d2/dG2.
-- Next: settle the d3 definition, then lrgs.py at Nmesh=512 (bullets
-  below). Bullets below that predate this update are history.
+    code produces now.
+  - **Resolved (2026-11-07): base-256 is the odd one out.**
+    - The user's tng_lib.py was last modified 2026-06-05, so the library
+      didn't change.
+    - my_generate_shifted_fields.py was edited 2026-11-04, so its Sep 21
+      state is unknowable.
+    - The small-box real 256 field stds are d1 3.06, d2 5.92, dG2 1.80,
+      d3 5.86. d3/d1 is ≈1.9 for small-256 and ≈2.0 for base-512, but
+      0.19 for base-256.
+    - So base-512 and small-256 share the current cubic, and the
+      base-512 vs small comparison (the point of the rerun) is like for
+      like. Only the old base-256 fields (and all 10500 base-256 lrgs.py
+      results) used a different, much weaker cubic.
+  - Caveat: the earlier "base-256 P_err inflated ~0.09 in every μ bin vs
+    small = Nyquist artifact" conclusion compared different cubics.
+    Part of that inflation may come from base-256's weak d3. The base-512
+    results will separate the two.
+- Next: lrgs.py at Nmesh=512. First a one-node, 30-min test to measure
+  MaxRSS/worker and throughput, then the full array (bullets below).
+  Bullets below that predate this update are history.
 
 - Why: base-box results at Nmesh=256 have k_Nyq = 0.402 = k_max, so k ≳ 0.2
   is contaminated by the mesh (see "Field-level P_err results"). The small
