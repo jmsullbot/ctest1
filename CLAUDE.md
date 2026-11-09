@@ -299,9 +299,25 @@ my_generate_shifted_fields.py in nbodykit_env_25 + asdf 2.12 + abacusutils
     small = Nyquist artifact" conclusion compared different cubics.
     Part of that inflation may come from base-256's weak d3. The base-512
     results will separate the two.
-- Next: lrgs.py at Nmesh=512. First a one-node, 30-min test to measure
-  MaxRSS/worker and throughput, then the full array (bullets below).
-  Bullets below that predate this update are history.
+- **lrgs.py 512 test, job 60988941_0** (1 node, 30 min, 16 workers at
+  MEM_PER_WORKER_GB=30):
+  - TIMEOUT as planned. Batch-step MaxRSS 392 GiB = **24.5 GiB/worker**,
+    82 % of the node.
+  - 324 real-space outputs in 24.2 min = **72 s/catalog/worker** (31 s at
+    256). 0 RSD outputs.
+  - 20 real outputs per worker with 0 RSD implies BATCH_SIZE was ~50 (the
+    runner default; the user's sbatch copy apparently doesn't export 12).
+    So workers never left the real-space loop, and **RSD-phase memory and
+    speed are unmeasured.** RSD loads 6 fields instead of 4, so expect
+    somewhat more memory.
+  - Full-run recommendation: `--export=ALL,NMESH=512,MEM_PER_WORKER_GB=36,
+    BATCH_SIZE=14 --array=0-63 -t 01:30:00`.
+    - 13 workers/node, which tolerates ~36 GiB/worker in the RSD phase.
+    - 750 batches, 11–12 per node, so one round.
+    - About 14×(72 s + RSD) + startup ≈ 40–60 min wall, ~35–50
+      node-hours.
+    - Pass BATCH_SIZE explicitly. Resubmitting the same command resumes.
+  - Bullets below that predate this update are history.
 
 - Why: base-box results at Nmesh=256 have k_Nyq = 0.402 = k_max, so k ≳ 0.2
   is contaminated by the mesh (see "Field-level P_err results"). The small
