@@ -181,6 +181,31 @@ or job-submission changes.
   (4.4→6.1); small is stable at ≈3.7 Mpc/h. Use N_mesh ≥ 512 (ideally
   1024, cell-matched to small 256) on the base box for k_max = 0.4, or
   cut base to k_max ≈ 0.2. R is unconstrained at these resolutions.
+- **Confirmed with base Nmesh=512 (2026-11-13, hod 2155).** Base-512 matches
+  the small box. Mean n̄P_err for k ∈ [0.3, 0.4), real/μ1/μ2/μ3:
+  - base-256: 0.79/0.80/0.90/1.07
+  - **base-512: 0.72/0.73/0.80/0.91**
+  - small-256: 0.70/0.71/0.79/0.91
+- Fits at k_max 0.4: base-512 D 0.288, ℓ_F 3.65, R → 0; small D 0.313,
+  ℓ_F 3.73, R 0.68 ± 0.33. Base-512 ℓ_F is stable vs k_max (3.56–3.68 for
+  k_max 0.2–0.7); base-256 drifted 4.4 → 6.1 (artifact).
+- Base-512 agrees with small up to k ≈ 0.6. At 0.6–0.8 its real space
+  rises (0.763 vs 0.735, 0.805 vs 0.757): the 512 grid's own Nyquist
+  effect. So use k_max ≲ 0.5–0.6 at 512.
+- Attribution of the old base-256 excess:
+  - base-256 is already 0.02–0.04 above base-512 at k 0.05–0.2, where the
+    256 grid is harmless. That part comes from the model fields (the weak
+    base-256 d3 is the prime suspect; coarser d2/dG2 may add).
+  - The rest grows toward k_Nyq(256), strongest along the LOS (up to
+    +0.15): that is the grid.
+- Unresolved: base-512 sits ~0.015–0.02 above small in real space at all
+  k (1 − D: 0.712 vs 0.687). It could be box-to-box halo differences or
+  the remaining resolution mismatch (base 512 is not cell-matched; that
+  would be 1024).
+- `compare_perr.py` now takes any number of panels (`--run REAL RSD LABEL
+  BOX NMESH`), draws a per-grid Nyquist marker, and prints k-window means
+  (`--kedges`) and a k_max refit scan (`--kscan`). `--left/--right` still
+  work, with `--left-nmesh/--right-nmesh`.
 
 ## Running lrgs.py (field-level bias) over all HODs
 
