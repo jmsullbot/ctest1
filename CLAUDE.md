@@ -206,6 +206,9 @@ or job-submission changes.
   BOX NMESH`), draws a per-grid Nyquist marker, and prints k-window means
   (`--kedges`) and a k_max refit scan (`--kscan`). `--left/--right` still
   work, with `--left-nmesh/--right-nmesh`.
+  The plot shows every run's FULL k range on a shared x-axis (fit solid,
+  extrapolation dashed, k_max marked); `--kplot` cuts it. Don't crop
+  panels at k_max: the user wants the full output.
 
 ## Running lrgs.py (field-level bias) over all HODs
 

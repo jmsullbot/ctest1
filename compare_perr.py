@@ -13,7 +13,8 @@ Any number of panels: one --run REAL RSD LABEL BOX NMESH per run, e.g.
                            --run b512_real.npy b512_rsd.npy "base 512" 2000 512 \
                            --run s256_real.npy s256_rsd.npy "small 256" 500 256
 
-Besides the figure it prints, per run: the fit at --kmax, the mean n̄P_err
+The plot shows every run's full k range: the fit (k <= --kmax) is solid, its
+extrapolation dashed; --kplot cuts the plot. Besides the figure it prints, per run: the fit at --kmax, the mean n̄P_err
 (real and each μ bin) in the k windows between --kedges, and D / ℓ_F refit
 at each --kscan k_max. Reuses the model/fit machinery from fit_perr.py.
 """
@@ -25,30 +26,44 @@ import numpy as np
 from fit_perr import fit, load, model
 
 
-def panel(ax, real, rsd, label, kmax, kind, box, nmesh=256):
+def panel(ax, real, rsd, label, kmax, kind, box, nmesh=256, xmax=None):
     k, y_real, mu_c, edges, y_rsd, nbar = load(real, rsd)
     popt, perr, rms, wrms, npts = fit(k, y_real, edges, y_rsd, kmax, kind)
     nmu = y_rsd.shape[1]
     kny = np.pi * nmesh / box if box else None
+    xmax = xmax or k.max() * 1.05
 
     import matplotlib.pyplot as plt
     blues = plt.cm.Blues(np.linspace(0.45, 0.95, nmu))
-    kk = np.geomspace(k.min(), kmax, 400)
+    kfit = min(kmax, k.max())
+    kk = np.geomspace(k.min(), kfit, 400)                         # fitted range: solid
+    kx = (np.geomspace(kfit, k.max(), 400)                        # extrapolation: dashed
+          if k.max() > kfit * 1.001 else None)
 
-    ax.plot(k, y_real, "o", ms=3.2, color="k", label="real space")
-    ax.plot(kk, model(kk, *popt, 0.0, 0.0, kind), "-", color="k", lw=1.5)
+    def curve(c, m1, m2):
+        ax.plot(kk, model(kk, *popt, m1, m2, kind), "-", color=c, lw=1.5)
+        if kx is not None:
+            ax.plot(kx, model(kx, *popt, m1, m2, kind), "--", color=c, lw=1.1, alpha=0.8)
+
+    ax.plot(k, y_real, "o", ms=3.0, color="k", label="real space")
+    curve("k", 0.0, 0.0)
     for j in range(nmu):
-        ax.plot(k, y_rsd[:, j], "o", ms=3.2, color=blues[j],
+        ax.plot(k, y_rsd[:, j], "o", ms=3.0, color=blues[j],
                 label=rf"$\mu \in [{edges[j]:.2f},\,{edges[j+1]:.2f}]$")
-        ax.plot(kk, model(kk, *popt, edges[j], edges[j + 1], kind), "-", color=blues[j], lw=1.5)
+        curve(blues[j], edges[j], edges[j + 1])
     ax.axhline(1.0, color="0.6", lw=0.8, ls=":")
-    xmax = kmax * 1.05                       # matches the x-limit set in main()
+    if kx is not None:
+        ax.axvline(kmax, color="0.4", lw=0.9, ls="-.")
+        ax.text(kmax * 1.03, 0.02, r"$k_{\max}$ (fit)", color="0.3", fontsize=8.5,
+                transform=ax.get_xaxis_transform(), va="bottom")
     if kny and kny <= xmax:                  # draw only what falls inside the plot
         ax.axvline(kny, color="crimson", lw=1, ls="--")
         ax.text(kny * 0.97, 0.98, r"$k_{\rm Nyq}$", color="crimson", ha="right", va="top",
                 transform=ax.get_xaxis_transform(), fontsize=9)
     if kny and kny / 2 <= xmax:
         ax.axvline(kny / 2, color="crimson", lw=0.8, ls=":")
+        ax.text(kny / 2 * 0.97, 0.98, r"$k_{\rm Nyq}/2$", color="crimson", ha="right", va="top",
+                transform=ax.get_xaxis_transform(), fontsize=8)
     ax.set_xscale("log")
     ax.set_xlabel(r"$k\ [h\,\mathrm{Mpc}^{-1}]$")
     ax.set_title(label + (f"   ($N_{{\\rm mesh}}={nmesh}$, $k_{{\\rm Nyq}}={kny:.2f}$)" if kny else ""), fontsize=10)
@@ -72,7 +87,9 @@ def main():
     ap.add_argument("--left-nmesh", type=int, default=256); ap.add_argument("--right-nmesh", type=int, default=256)
     ap.add_argument("--run", nargs=5, action="append", metavar=("REAL", "RSD", "LABEL", "BOX", "NMESH"),
                     help="one panel per --run (repeatable); replaces --left/--right")
-    ap.add_argument("--kmax", type=float, default=0.4)
+    ap.add_argument("--kmax", type=float, default=0.4, help="fit range (the plot shows all data)")
+    ap.add_argument("--kplot", type=float, default=None,
+                    help="cut the plot at this k (default: the largest k of any run)")
     ap.add_argument("--window", choices=["gauss", "tophat"], default="gauss")
     ap.add_argument("--kedges", nargs="+", type=float, default=[0.05, 0.1, 0.2, 0.3, 0.4],
                     help="k windows for the mean n̄P_err table")
@@ -93,16 +110,19 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    data = [load(real, rsd) for real, rsd, _, _, _ in runs]
+    xmax = a.kplot or max(d[0].max() for d in data) * 1.05     # shared x-axis: every run's full range
+
     fig, axes = plt.subplots(1, len(runs), figsize=(6.25 * len(runs), 5.0), sharey=True)
     axes = np.atleast_1d(axes)
-    res = [panel(ax, real, rsd, lab, a.kmax, a.window, box, nm)
+    res = [panel(ax, real, rsd, lab, a.kmax, a.window, box, nm, xmax)
            for ax, (real, rsd, lab, box, nm) in zip(axes, runs)]
     axes[0].set_ylabel(r"$\bar n\, P_{\rm err}(k,\mu)$")
     axes[0].legend(loc="upper left", fontsize=8.5, frameon=False)
     Wtxt = r"e^{-k^2R^2/2}" if a.window == "gauss" else r"W_{\rm TH}(kR)"
     fig.suptitle(r"$\bar n P_{\rm err} = 1 - D\,%s\,e^{-k^2\mu^2\ell_F^2}$,  $k_{\max}=%g$" % (Wtxt, a.kmax), fontsize=11)
     for ax in axes:
-        ax.set_xlim(0.0028, a.kmax * 1.05)
+        ax.set_xlim(0.0028, xmax)
     fig.tight_layout()
     fig.savefig(a.out, dpi=160)
 
@@ -112,7 +132,6 @@ def main():
     for (_, _, lab, _, _), (p, e, nb, rms) in zip(runs, res):
         print(f"{lab:{w}s} {p[0]:7.4f} ± {e[0]:6.4f} {p[1]:8.3f} ± {e[1]:6.3f}   {p[2]:7.3f} ± {e[2]:6.3f} {nb:10.3e} {rms:7.4f}")
 
-    data = [load(real, rsd) for real, rsd, _, _, _ in runs]
     nmu = data[0][4].shape[1]
     print("\nmean n̄P_err per k window:   real | " + " | ".join(f"mu bin {j + 1}" for j in range(nmu)))
     for lo, hi in zip(a.kedges[:-1], a.kedges[1:]):
