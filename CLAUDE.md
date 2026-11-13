@@ -233,7 +233,20 @@ or job-submission changes.
   time). It is much lighter on memory though, so `MEM_PER_WORKER_GB=4`
   lets the runner use roughly twice as many workers per node.
 
-## OPEN ITEM: base-box rerun of lrgs.py at Nmesh = 512 (not done as of 2026-11-04)
+## DONE (2026-11-13): base-box rerun of lrgs.py at Nmesh = 512
+
+**Complete.** `NMESH=512 bash run_lrgs_parallel.sh --status` reports real
+10500/10500 and RSD 10500/10500. `grep -l FAILED lrgs_*.out` is empty. Run
+with the recommended array settings (below); exact job IDs and RSD-phase
+MaxRSS not recorded. (`--status` prints "batches: 210 of 50" because it uses
+the runner's default BATCH_SIZE for display only.)
+- Still to do:
+  - Compare base-512 to small-256 P_err for hod 2155 (compare_perr.py).
+    That settles how much of the old base-256 excess was the mesh vs the
+    weak base-256 cubic.
+  - Back up `AbacusBase/results` (scratch purge).
+
+History of the item follows.
 
 **Update 2026-11-05: the 512 shifted fields now exist.** Batch job 60856968
 (perlmutter_shifted_fields.sbatch, CPU node, unedited
