@@ -226,6 +226,17 @@ or job-submission changes.
   SLURM allocation, since login nodes are shared.
 - lrgs.py skips entries whose output already exists, so the whole thing is
   resumable and safe to re-run; `--status`, `--dry-run`, `--retry-failed`.
+- **lrgs.py never saves painted galaxy meshes.** Per catalog it reads
+  `pathD + "{:06d}.npy"` and shifts positions by +L/2 (catalogs are
+  centred on 0). It uses (x, y, z) in real space and (x, y, z_rsd) in RSD,
+  paints `ArrayCatalog(...).to_mesh(compensated=True).paint() - 1.0` in
+  memory, and saves only `results`:
+  - real: (k, P_err, P_true, P_model, r, β1, β2, βG2, β3, n̄);
+  - RSD: the same per μ bin.
+  The small copy has `pathD = /pscratch/sd/j/jsull/lrg_hods_small/catalogs/`;
+  the base lrgs.py presumably uses `.../lrg_hods/catalogs/` (not seen
+  here). One 512³ float32 mesh is 0.5 GiB, so all 10500 × (real + RSD) is
+  ~10 TB. Repaint on demand rather than store.
 - `lrgs_hoist.diff` moves 9 of 25 per-catalog `FFTPower` calls out of the two
   loops (they depend only on the shifted fields, not the catalog): real-space
   pd1/pd2ort/pdG2ort/pd3ort, RSD pz/pd1ort/pd2ort/pG2ort/pd3ort, plus the
