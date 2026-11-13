@@ -237,6 +237,13 @@ or job-submission changes.
   the base lrgs.py presumably uses `.../lrg_hods/catalogs/` (not seen
   here). One 512³ float32 mesh is 0.5 GiB, so all 10500 × (real + RSD) is
   ~10 TB. Repaint on demand rather than store.
+- `pack_hods.sh [rows...]` (default: the user's 27-row list) bundles, per
+  row, the base-256, base-512 and small-256 results (real + RSD) plus the
+  rows of each `hod_summary.csv` and a README into
+  `$PSCRATCH/downloads/hod_results_<tag>.tar.gz`. The base and small
+  catalogs go into a separate `hod_catalogs_<tag>.tar` (sizes printed first;
+  ~80 B/galaxy). `CATALOGS=0` / `BASE_CATALOGS=0` drop catalogs. Missing
+  files are listed in MANIFEST.txt.
 - `lrgs_hoist.diff` moves 9 of 25 per-catalog `FFTPower` calls out of the two
   loops (they depend only on the shifted fields, not the catalog): real-space
   pd1/pd2ort/pdG2ort/pd3ort, RSD pz/pd1ort/pd2ort/pG2ort/pd3ort, plus the
