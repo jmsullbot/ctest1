@@ -73,9 +73,14 @@ lrgs.py results and HOD catalogs for selected rows of lrg_params_eq74.npy
 Row NNNN is the same HOD in every directory.
 
 base_Nmesh256/   base box, lrgs.py at Nmesh = 256 (k_Nyq = 0.40 h/Mpc)
-                 CAVEAT: these shifted fields used a much weaker cubic operator (d3)
-                 than base_Nmesh512 and small_Nmesh256, and k >~ 0.25 is affected by
-                 the mesh. Prefer base_Nmesh512.
+                 CAVEAT 1: the cubic operator d3 in these shifted fields (Sep 21 run)
+                 was built differently from base_Nmesh512 and small_Nmesh256: it is
+                 ~17x smaller (std 0.25 vs 4.24; 0.19x d1 instead of ~2x) and only
+                 r ~ 0.3 correlated with the 512 d3 at large scales, probably from
+                 heavier smoothing before cubing. Comparisons with base 256 mix two
+                 cubic definitions.
+                 CAVEAT 2: k >~ 0.25 is affected by the 256 mesh (Nyquist 0.40).
+                 Prefer base_Nmesh512.
 base_Nmesh512/   base box, Nmesh = 512 (k_Nyq = 0.80); reliable to k ~ 0.5-0.6
 small_Nmesh256/  small box, Nmesh = 256 (k_Nyq = 1.61)
 

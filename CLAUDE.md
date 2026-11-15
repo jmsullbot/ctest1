@@ -163,6 +163,13 @@ or job-submission changes.
   PLT on, and the CLASS input spectrum — so the field can in principle be
   regenerated with the public zeldovich-PLT code if a box's ICs are ever
   unavailable (unverified whether reduced-N output is phase-identical).
+- 2026-11-15: the user wants to download the raw base ICs to recompute the
+  shifted fields with a different code.
+  - Which N my_generate_shifted_fields.py reads is still unknown (grep it
+    for `ic_dens`). N576 is the smallest file that supports a 512 grid
+    (k_Nyq 0.905 > 0.804); truncate in k-space.
+  - Reading needs asdf + abacusutils (Blosc). The header GrowthTable gives
+    D(0.5)/D(z_init=99) = 59.911485.
 
 ## Field-level P_err results (hod 2155, z=0.5)
 
