@@ -333,6 +333,14 @@ my_generate_shifted_fields.py in nbodykit_env_25 + asdf 2.12 + abacusutils
     definitions (sharp k≤0.5 cubic, per-k-bin orthogonalization, 128³ vs
     64³ on 500 Mpc/h) reproduces the user's d1/d2/dG2 numbers but gives
     d3 r ≈ 0.88, ratio ≈ 1.0.
+    - Basis of that test: the PUBLIC `d3_smooth(km=0.5)`, i.e. sharp
+      |k| ≤ 0.5 then cube. It used UNSHIFTED operators on a Gaussian
+      BBKS field, real space only, and sequential per-k-bin Gram–Schmidt.
+    - The user's own tng_lib differs from the public one (131,896 vs
+      101,926 B; it has generate_fields_rsd_new_growth). Their d3 may
+      differ; check `grep -n -A6 "def d3_smooth"` in it.
+    - Definitive test: regenerate base 256 with the current script into a
+      separate folder and compare with check_shifted_fields.py.
   - The Sep 22 real 512 file already had the large d3 (slab std 4.3). So
     the d3 definition changed between the Sep 21 256 run and Sep 22, or
     the script's cubic smoothing depends on Nmesh.
