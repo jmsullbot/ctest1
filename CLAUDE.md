@@ -291,6 +291,16 @@ the runner's default BATCH_SIZE for display only.)
     That settles how much of the old base-256 excess was the mesh vs the
     weak base-256 cubic.
   - Back up `AbacusBase/results` (scratch purge).
+  - **Re-htar `AbacusBase/shifted_fields/`.** The 2026-11-04 HPSS copy
+    predates job 60856968 (Nov 5), so it lacks
+    `shifted_fields_redshift_axisrsd_2_N_512_c_0.npy` and has the old real
+    512 file. Use a new archive name to keep the old one.
+- pack_hods.sh bundles hold results, params and catalogs only. The inputs
+  behind the plots are separate downloads:
+  - shifted fields: base real/RSD-axis-2 at 256 (0.27/0.40 GB) and 512
+    (2.15/3.22 GB) in `$PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusBase/shifted_fields/`;
+    small at 256 in `.../AbacusSmall/shifted_fields/`;
+  - raw ICs: `$PSCRATCH/abacus_ics_000/` (Blosc asdf; public via Globus).
 
 History of the item follows.
 
