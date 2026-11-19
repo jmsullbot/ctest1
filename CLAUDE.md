@@ -217,6 +217,40 @@ or job-submission changes.
   extrapolation dashed, k_max marked); `--kplot` cuts it. Don't crop
   panels at k_max: the user wants the full output.
 
+## perr_from_ic.py: IC grid + catalog -> transfer functions, P_err, plots (2026-11-19)
+
+- Standalone numpy/scipy (no nbodykit; vermin: Python 3.2+), written because
+  the full lrgs.py was no longer available (the transcript was compacted).
+  - Inputs: `--ic` N³ .npy (the grid IS the mesh; `--nmesh` truncates in
+    Fourier space first), `--growth` D(z_out)/D(z_IC) (59.911485 for
+    Abacus z=99 → 0.5), `--catalog`.
+  - It builds the shifted operators (Zel'dovich, CIC, compensation
+    "shotnoise" = nbodykit's non-interlaced default) and the library cubic
+    d3 = (δ1, |k| ≤ 0.5)³.
+  - It orthogonalizes per k / (k, μ) bin and fits β per bin.
+  - Outputs are in the lrgs.py results layout: `<out>_real.npy`,
+    `<out>_rsd.npy` (Nmu = 3 default), `<out>_transfer.png` (Fig. 4 style
+    of the user's arXiv:2505.03626: β1, β2, βG2, β3, P_err; real space
+    black, μ shades, P_err in h⁻³Mpc³ with 1/n̄) and `<out>_perr.png`
+    (P_err blow-up: one panel per curve, k_Nyq marks, n̄P_err axis).
+    `--replot PREFIX` redraws; `--save-fields DIR` writes the generator's
+    field layout.
+- Model = Eq. 16 of 2505.03626 (the user is first author: James M.
+  Sullivan): δ_g = δ_Z − 3/7 f G2par + β1 d1 + β2 d2⊥ + βG2 G2⊥ + β3 d3⊥.
+  - Real space is its f=0 limit, so δ_Z is fixed in real space too and
+    β1 → b1 − 1 in both spaces (black matches μ bins at low k, as in the
+    paper's Fig. 4).
+  - `--real-no-dz` gives the lrgs.py-like real-space fit (its real field
+    files have no dz).
+  - G2par is the library's Lagrangian-projected version (lrgs.py's
+    `dz − 3/7 f dG2par`), not μ²·(shifted G2).
+- Validated in the sandbox: CIC = naive loop; truncation keeps shared
+  modes; Poisson samples of a truth in the model span give n̄P_err ≈
+  1.01–1.07 in real and redshift space; P_true = P_model + P_err (real)
+  to 2e-8. A 256³ run takes 41 s on 4 cores, 2.7 GiB. 512³ is ~8× (use a
+  compute node). NOT yet compared with lrgs.py on real data: run both on
+  hod 2155 at 256 and compare with compare_perr.py.
+
 ## Running lrgs.py (field-level bias) over all HODs
 
 - `lrgs.py` (the user's transfer-function script, lives with their Hi-Fi_mocks
