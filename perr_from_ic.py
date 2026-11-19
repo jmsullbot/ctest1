@@ -1,22 +1,45 @@
 #!/usr/bin/env python
 """Field-level P_err from an initial-condition grid and a galaxy catalog.
 
-    python perr_from_ic.py --ic ic_delta_256.npy --catalog catalogs/002155.npy \\
-        --box 2000 --growth 59.911485 --out hod2155_N256
+    python perr_from_ic.py --ic ic_delta_256.npy --catalog galaxies.npy --z-out 0.5 --out run1
+
+The defaults describe the simulation this was set up for (from its header):
+box 338.3 Mpc/h, ICs at z = 49, flat LCDM with Omega0 = 0.30964144 and
+OmegaLambda = 0.6902672. Its HubbleParam (0.6766) and OmegaBaryon
+(0.04897468) do not enter. For any other run, pass --box, --z-ic, --omega-m
+and --omega-r.
 
 Inputs
-  --box      box side in Mpc/h, required (2000 base, 500 small). The catalog's
-             extent is checked against it.
-  --ic       .npy, an N^3 grid of the linear density contrast. The grid IS the
-             mesh: everything (operators, galaxies, P(k)) is done at this N.
-             --nmesh M (< N) first truncates it in Fourier space to M^3.
-  --growth   factor taking the IC to the output redshift, D(z_out)/D(z_IC).
-             AbacusSummit ICs (z = 99) to z = 0.5 on c000: 59.911485. Use 1 if
-             the grid is already at z_out.
-  --catalog  .npy galaxy catalog: structured array with x, y, z (and z_rsd for
-             redshift space), or an (Ngal, 3 or 4) array in that column order.
-             Positions centred on 0 (our catalogs) are shifted by +L/2, as
-             lrgs.py does; pass --no-centre-shift if yours are in [0, L).
+  --ic       .npy, an N^3 grid of the linear density contrast at --z-ic
+             (default 49). The grid IS the mesh: everything (operators,
+             galaxies, P(k)) is done at this N. --nmesh M (< N) first
+             truncates it in Fourier space to M^3.
+  --box      box side in Mpc/h (default 338.3). The catalog's extent is
+             checked against it.
+  --z-out    the catalog's redshift, required. The IC grid is multiplied by
+             D(z_out)/D(z_ic), and redshift space uses f = dlnD/dlna at z_out.
+             Both come from the linear growth equation for a flat universe
+             with --omega-m (default 0.30964144), --omega-r (default 9.136e-5)
+             and Omega_Lambda = 1 - Omega_m - Omega_r.
+             The default Omega_r is the header's 1 - Omega0 - OmegaLambda,
+             which is exactly photons plus massless neutrinos. If the N-body
+             code leaves radiation out of H(a) (Gadget and N-GenIC do), pass
+             --omega-r 0: D(z_out)/D(49) is then 0.94% higher.
+             --omega-nu: massive neutrinos within Omega_m, kept smooth (in
+             H(a), not in the growth source).
+             --growth / --f override the computed values (--growth 1 if the
+             grid is already at z_out).
+             Cross-check: AbacusSummit c000 (--z-ic 99 --omega-m 0.315192
+             --omega-nu 0.0014197 --omega-r 0) gives D(0.5)/D(99) = 59.9116 and
+             f = 0.75907; Abacus's own tables give 59.911485 and 0.759070.
+  --catalog  .npy galaxy catalog, positions in Mpc/h. Either a structured
+             array with x, y, z and z_rsd, or an (Ngal, 3), (Ngal, 4:
+             x y z z_rsd) or (Ngal, 6: x y z vx vy vz) array.
+             A catalog with vz (peculiar velocity in km/s) but no z_rsd gets
+             z_rsd = z + vz (1 + z_out) / (100 E(z_out)).
+             Positions in [0, L) are used as they are. Positions centred on 0
+             (any coordinate < 0, as in AbacusHOD catalogs) are shifted by
+             +L/2, as lrgs.py does. --no-centre-shift forces [0, L).
 
 Outputs (<out> from --out)
   <out>_real.npy  [k, P_err, P_true, P_model, r, beta1, beta2, betaG2, beta3, nbar]
@@ -34,7 +57,7 @@ directly, e.g. to compare with the lrgs.py results for the same HOD.
 (shifted_fields_real_N_<N>_c_0.npy, shifted_fields_redshift_axisrsd_2_N_<N>_c_0.npy).
 
 Method (Schmittfull et al. 2019, 2021; the public Hi-Fi_mocks library)
-  1. delta_1(q) = growth * IC (mean removed) at the N^3 grid points q.
+  1. delta_1(q) = D(z_out)/D(z_ic) * IC (mean removed) at the N^3 grid points q.
   2. Lagrangian operators at q: d1 = delta_1; d2 = delta_1^2 - <>;
      G2 = sum_ij (k_i k_j / k^2 delta_1)^2 - delta_1^2;
      d3 = (delta_1 with |k| <= --d3-kmax, default 0.5 as in the library's
@@ -67,6 +90,7 @@ Memory: ~3 GB at 256^3; ~30-40 GB at 512^3 (use a compute node for 512).
 from __future__ import print_function
 
 import argparse
+import math
 import os
 import sys
 import time
@@ -281,6 +305,68 @@ def fit_transfer(dg, ops, fixed, mesh, two_d):
     return perr, ptrue, pmodel, r, betas
 
 
+# ----------------------------------------------------------- cosmology ---
+# Defaults: the simulation header (BoxSize 338.3, Redshift 49, Omega0 0.30964144,
+# OmegaLambda 0.6902672). Omega0 + OmegaLambda = 1 - 9.136e-5; the remainder is
+# radiation (photons + massless neutrinos for T_CMB 2.7255 K, N_eff 3.046, h 0.6766).
+BOX = 338.3
+Z_IC = 49.0
+OMEGA_M = 0.30964144
+OMEGA_R = 1.0 - 0.30964144 - 0.6902672
+
+
+def hubble_e(z, omega_m, omega_r):
+    """E(z) = H(z) / H0 in a flat universe (Omega_Lambda = 1 - omega_m - omega_r)."""
+    a = 1.0 / (1.0 + z)
+    return math.sqrt(omega_r / a ** 4 + omega_m / a ** 3 + 1.0 - omega_m - omega_r)
+
+
+def growth(z_ic, z_out, omega_m, omega_nu=0.0, omega_r=0.0, dx=0.002):
+    """(D(z_out) / D(z_ic), f(z_out) = dlnD/dlna) in a flat universe.
+
+    Integrates, in x = ln a, with RK4 steps of at most dx,
+        D'' + (2 + dlnE/dx) D' - 3/2 (omega_m - omega_nu) a^-3 / E^2 D = 0.
+    It starts on the growing mode deep in matter domination (D = a^p, p = 1
+    without neutrinos), or, when omega_r > 0, in radiation domination
+    (D = 1 + 3/2 f_cb a / a_eq). omega_nu is the massive-neutrino part of
+    omega_m and is kept smooth: it adds to H but not to the source. With
+    omega_r = 0 this matches AbacusSummit's growth tables to 3e-6."""
+    om, onu, orad = float(omega_m), float(omega_nu), float(omega_r)
+    ol = 1.0 - om - orad
+    src = 1.5 * (om - onu)
+    fcb = (om - onu) / om
+
+    def rhs(x, d, v):
+        ia = math.exp(-x)
+        m, r = om * ia ** 3, orad * ia ** 4
+        e2 = r + m + ol
+        return v, -(2.0 - (2.0 * r + 1.5 * m) / e2) * v + src * ia ** 3 / e2 * d
+
+    if orad > 0:
+        a0 = 1e-4 * orad / om                       # a / a_eq = 1e-4
+        d, v = 1.0 + 1.5 * fcb * 1e-4, 1.5 * fcb * 1e-4
+    else:
+        a0 = 1e-5
+        p = (math.sqrt(1.0 + 24.0 * fcb) - 1.0) / 4.0
+        d, v = a0 ** p, p * a0 ** p
+    x = math.log(a0)
+    ends = []
+    for xe in (-math.log1p(z_ic), -math.log1p(z_out)):
+        n = max(1, int(math.ceil((xe - x) / dx)))
+        h = (xe - x) / n
+        for i in range(n):
+            k1 = rhs(x, d, v)
+            k2 = rhs(x + h / 2, d + h / 2 * k1[0], v + h / 2 * k1[1])
+            k3 = rhs(x + h / 2, d + h / 2 * k2[0], v + h / 2 * k2[1])
+            k4 = rhs(x + h, d + h * k3[0], v + h * k3[1])
+            d += h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0])
+            v += h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])
+            x = xe if i == n - 1 else x + h
+        ends.append((d, v))
+    (d_ic, _), (d_out, v_out) = ends
+    return d_out / d_ic, v_out / d_out
+
+
 # ----------------------------------------------------------------- I/O ---
 def truncate_ic(delta, m):
     """Fourier-truncate an N^3 grid to m^3 (m < N, both even); Nyquist planes zeroed."""
@@ -295,33 +381,52 @@ def truncate_ic(delta, m):
     return irfftn(G * np.float32((float(m) / n) ** 3), m).astype(np.float32)
 
 
-def load_catalog(path, box, centre_shift):
+def load_catalog(path, box, force_corner, vz_to_dist):
+    """Positions wrapped into [0, L): ([x, y, z], z_rsd or None).
+    vz_to_dist [Mpc/h per km/s] makes z_rsd from vz when the catalog has no z_rsd
+    (None: not available, so real space only)."""
     c = np.load(path)
+    vz = None
     if c.dtype.names:
+        missing = [k for k in ("x", "y", "z") if k not in c.dtype.names]
+        if missing:
+            sys.exit("catalog %s has no %s (fields: %s)" % (path, ", ".join(missing), ", ".join(c.dtype.names)))
         cols = [c["x"], c["y"], c["z"]]
         zr = c["z_rsd"] if "z_rsd" in c.dtype.names else None
+        if zr is None and "vz" in c.dtype.names:
+            vz = c["vz"]
     else:
         a = np.asarray(c)
-        if a.ndim != 2 or a.shape[1] < 3:
-            sys.exit("catalog must be structured (x, y, z[, z_rsd]) or (Ngal, >=3)")
+        if a.ndim != 2 or a.shape[1] not in (3, 4, 6):
+            sys.exit("catalog must be a structured array (x, y, z and z_rsd or vz) or an (Ngal, 3|4|6) array "
+                     "with columns x y z | x y z z_rsd | x y z vx vy vz; got shape %s" % (a.shape,))
         cols = [a[:, 0], a[:, 1], a[:, 2]]
-        zr = a[:, 3] if a.shape[1] > 3 else None
+        zr = a[:, 3] if a.shape[1] == 4 else None
+        vz = a[:, 5] if a.shape[1] == 6 else None
     if len(cols[0]) == 0:
         sys.exit("catalog %s is empty" % path)
-    # x, y, z must fit the box: [-L/2, L/2] if centred, else [0, L] (z_rsd may spill; it wraps)
-    lo_ok, hi_ok = (-0.5 * box, 0.5 * box) if centre_shift else (0.0, box)
-    tol = 1e-3 * box
+    # centred on 0 if any coordinate is clearly negative; x, y, z must then fit
+    # [-L/2, L/2], otherwise [0, L] (z_rsd may spill over; it wraps)
     lo = min(float(np.min(x)) for x in cols)
     hi = max(float(np.max(x)) for x in cols)
+    centred = lo < -0.01 * box and not force_corner
+    lo_ok, hi_ok = (-0.5 * box, 0.5 * box) if centred else (0.0, box)
+    tol = 1e-3 * box
     if lo < lo_ok - tol or hi > hi_ok + tol:
-        sys.exit("catalog positions span [%.1f, %.1f] Mpc/h, outside %s for --box %g: wrong --box, "
-                 "or the catalog is %s (%s)" % (lo, hi, "[-L/2, L/2]" if centre_shift else "[0, L]", box,
-                 "not centred on 0" if centre_shift else "centred on 0",
-                 "pass --no-centre-shift" if centre_shift else "drop --no-centre-shift"))
+        sys.exit("catalog positions span [%.1f, %.1f] Mpc/h, outside %s for --box %g: wrong --box?%s"
+                 % (lo, hi, "[-L/2, L/2] (centred on 0, as some are < 0)" if centred else "[0, L]", box,
+                    " Or drop --no-centre-shift." if force_corner and lo < 0 else ""))
+    log("catalog positions %s" % ("centred on 0: shifted by +L/2" if centred else "in [0, L): used as they are"))
     span = hi - lo
     if len(cols[0]) > 1000 and span < 0.75 * box:
         log("WARNING: catalog spans only %.0f Mpc/h but --box is %g: check --box" % (span, box))
-    s = 0.5 * box if centre_shift else 0.0
+    if zr is None and vz is not None:
+        if vz_to_dist is None:
+            log("catalog has vz but no z_rsd: pass --z-out to convert vz")
+        else:
+            zr = np.asarray(cols[2], np.float64) + vz_to_dist * np.asarray(vz, np.float64)
+            log("z_rsd = z + vz * %.6g Mpc/h per km/s = (1 + z_out) / (100 E(z_out))" % vz_to_dist)
+    s = 0.5 * box if centred else 0.0
     xyz = [np.mod(np.asarray(x, np.float64) + s, box) for x in cols]
     zrs = None if zr is None else np.mod(np.asarray(zr, np.float64) + s, box)
     return xyz, zrs
@@ -478,17 +583,27 @@ def main():
     global WORKERS
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument("--ic", help="N^3 .npy linear density grid")
+    ap.add_argument("--ic", help="N^3 .npy linear density grid at --z-ic")
     ap.add_argument("--catalog", help="galaxy catalog .npy")
-    ap.add_argument("--box", type=float, default=None,
-                    help="box side [Mpc/h], required (e.g. 2000 base, 500 small)")
-    ap.add_argument("--growth", type=float, default=1.0, help="D(z_out)/D(z_IC) (default 1)")
-    ap.add_argument("--f", type=float, default=0.759070, help="growth rate at z_out (default c000, z=0.5)")
+    ap.add_argument("--box", type=float, default=BOX, help="box side [Mpc/h] (default %g)" % BOX)
+    ap.add_argument("--z-out", type=float, default=None, help="redshift of the catalog (required)")
+    ap.add_argument("--z-ic", type=float, default=Z_IC, help="redshift of the IC grid (default %g)" % Z_IC)
+    ap.add_argument("--omega-m", type=float, default=OMEGA_M,
+                    help="Omega_m today: all matter in H(a) (default %g)" % OMEGA_M)
+    ap.add_argument("--omega-r", type=float, default=OMEGA_R,
+                    help="radiation in H(a) (default %.4g; 0 if the N-body code has none, e.g. Gadget)"
+                         % OMEGA_R)
+    ap.add_argument("--omega-nu", type=float, default=0.0,
+                    help="massive neutrinos within --omega-m, kept smooth (default 0)")
+    ap.add_argument("--growth", type=float, default=None,
+                    help="override D(z_out)/D(z_ic), e.g. 1 if the grid is already at z_out")
+    ap.add_argument("--f", type=float, default=None, help="override the growth rate f at z_out")
     ap.add_argument("--nmesh", type=int, default=None, help="Fourier-truncate the IC to this N first")
     ap.add_argument("--nmu", type=int, default=3, help="mu bins (default 3)")
     ap.add_argument("--d3-kmax", type=float, default=0.5, help="cut on delta_1 before cubing [h/Mpc]")
     ap.add_argument("--compensation", choices=["shotnoise", "sinc"], default="shotnoise")
-    ap.add_argument("--no-centre-shift", action="store_true", help="positions already in [0, L)")
+    ap.add_argument("--no-centre-shift", action="store_true",
+                    help="positions are in [0, L) (default: detected; centred on 0 if any is < 0)")
     ap.add_argument("--no-rsd", action="store_true", help="real space only")
     ap.add_argument("--real-no-dz", action="store_true",
                     help="real space without the fixed delta_Z term (lrgs.py-like; beta_1 -> b_1)")
@@ -503,16 +618,39 @@ def main():
     a = ap.parse_args()
     WORKERS = a.workers
 
+    if a.box <= 0:
+        ap.error("--box must be positive (Mpc/h)")
     if a.replot:                              # figures only, from saved results
         R = load_results(a.replot)
         nmesh = a.nmesh or 2 * (len(R["k"]) + 1)       # lrgs-style bins: nk = N/2 - 1
-        make_plots(a.replot, np.pi * nmesh / a.box if a.box else None,
-                   a.title or os.path.basename(a.replot))
+        make_plots(a.replot, np.pi * nmesh / a.box, a.title or os.path.basename(a.replot))
         return
     if not (a.ic and a.catalog):
         ap.error("--ic and --catalog are required (or use --replot PREFIX)")
-    if not a.box or a.box <= 0:
-        ap.error("--box is required: the box side in Mpc/h (2000 base, 500 small)")
+
+    # D(z_out)/D(z_ic) and f(z_out); vz -> z_rsd needs E(z_out)
+    if a.z_out is None and (a.growth is None or (a.f is None and not a.no_rsd)):
+        ap.error("--z-out is required: the catalog's redshift (the IC grid at --z-ic %g is grown to it)"
+                 % a.z_ic)
+    D = f = vz_to_dist = None
+    if a.z_out is not None:
+        if not -1 < a.z_out <= a.z_ic:
+            ap.error("need -1 < --z-out <= --z-ic, got z_out %g, z_ic %g" % (a.z_out, a.z_ic))
+        if not (0 < a.omega_m and 0 <= a.omega_nu < a.omega_m and a.omega_r >= 0
+                and a.omega_m + a.omega_r <= 1):
+            ap.error("need 0 < Omega_m, 0 <= Omega_nu < Omega_m, Omega_r >= 0, Omega_m + Omega_r <= 1")
+        D, f = growth(a.z_ic, a.z_out, a.omega_m, a.omega_nu, a.omega_r)
+        vz_to_dist = (1.0 + a.z_out) / (100.0 * hubble_e(a.z_out, a.omega_m, a.omega_r))
+        log("flat LCDM: Omega_m %g (smooth nu %g), Omega_r %.4g, Omega_Lambda %.8g"
+            % (a.omega_m, a.omega_nu, a.omega_r, 1.0 - a.omega_m - a.omega_r))
+        log("D(z=%g)/D(z=%g) = %.6f, f(z=%g) = %.6f, E(z=%g) = %.6f"
+            % (a.z_out, a.z_ic, D, a.z_out, f, a.z_out, hubble_e(a.z_out, a.omega_m, a.omega_r)))
+    if a.growth is not None:
+        log("using --growth %g%s" % (a.growth, "" if D is None else " instead of %.6f" % D))
+        D = a.growth
+    if a.f is not None:
+        log("using --f %g%s" % (a.f, "" if f is None else " instead of %.6f" % f))
+        f = a.f
 
     delta = np.load(a.ic).astype(np.float32)
     if delta.ndim != 3 or len(set(delta.shape)) != 1 or delta.shape[0] % 2:
@@ -521,7 +659,7 @@ def main():
         log("truncating the IC from %d^3 to %d^3 in Fourier space" % (delta.shape[0], a.nmesh))
         delta = truncate_ic(delta, a.nmesh)
     n = delta.shape[0]
-    delta *= np.float32(a.growth)
+    delta *= np.float32(D)
     delta -= delta.mean()
     out = a.out or "%s_N%d" % (os.path.splitext(os.path.basename(a.catalog))[0], n)
     targets = [out + "_real.npy"] + ([] if a.no_rsd else [out + "_rsd.npy"])
@@ -532,10 +670,10 @@ def main():
     if a.save_fields:
         os.makedirs(a.save_fields, exist_ok=True)
 
-    log("IC %s: %d^3, box %g Mpc/h, growth %g, std(delta_1) = %.4f"
-        % (a.ic, n, a.box, a.growth, float(delta.std())))
+    log("IC %s: %d^3, box %g Mpc/h, times D = %.6f, std(delta_1) = %.4f"
+        % (a.ic, n, a.box, D, float(delta.std())))
     mesh = Mesh(n, a.box, a.nmu, a.compensation)
-    xyz, zrsd = load_catalog(a.catalog, a.box, not a.no_centre_shift)
+    xyz, zrsd = load_catalog(a.catalog, a.box, a.no_centre_shift, vz_to_dist)
     ngal = len(xyz[0])
     nbar = ngal / a.box ** 3
     rsd = (not a.no_rsd) and zrsd is not None
@@ -570,13 +708,13 @@ def main():
     perr_s = None
     if rsd:
         names = ["d1", "d2", "G2", "G2par", "d3"]
-        painted = cic_paint(shifted_positions(psi, mesh, a.f), n,
+        painted = cic_paint(shifted_positions(psi, mesh, f), n,
                             [None] + [ops[k].ravel() for k in names])
         F = [to_fourier(p, mesh) for p in painted]
         del painted
         F[0][0, 0, 0] = 0                                  # dz: remove the mean
         dz, d1, d2, g2, g2par, d3 = F
-        fixed = dz - np.float32(3.0 / 7.0 * a.f) * g2par
+        fixed = dz - np.float32(3.0 / 7.0 * f) * g2par
         O = orthogonalize([d1, d2, g2, d3], mesh, two_d=True)
         dgs = galaxy_field(xyz[0], xyz[1], zrsd, mesh)
         perr_s, ptrue_s, pmodel_s, r_s, betas_s = fit_transfer(dgs, O, fixed, mesh, two_d=True)
@@ -600,8 +738,9 @@ def main():
         print(line)
     if not a.no_plot:
         model = "real space without $\\delta_Z$" if a.real_no_dz else "Eq. 16 model"
-        make_plots(out, mesh.knyq, a.title or "%s,  $N_{\\rm mesh}=%d$, $L=%g\\,h^{-1}$Mpc  (%s)"
-                   % (os.path.basename(out), n, a.box, model))
+        zlab = "" if a.z_out is None else "$z=%g$, " % a.z_out
+        make_plots(out, mesh.knyq, a.title or "%s,  %s$N_{\\rm mesh}=%d$, $L=%g\\,h^{-1}$Mpc  (%s)"
+                   % (os.path.basename(out), zlab, n, a.box, model))
     log("done")
 
 

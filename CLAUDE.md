@@ -221,11 +221,31 @@ or job-submission changes.
 
 - Standalone numpy/scipy (no nbodykit; vermin: Python 3.2+), written because
   the full lrgs.py was no longer available (the transcript was compacted).
-  - Inputs: `--box` (REQUIRED, no default; catalog extent checked: error
-    if positions exceed the box, warning if they span < 75 % of it), `--ic`
-    N³ .npy (the grid IS the mesh; `--nmesh` truncates in
-    Fourier space first), `--growth` D(z_out)/D(z_IC) (59.911485 for
-    Abacus z=99 → 0.5), `--catalog`.
+  - Inputs: `--ic` N³ .npy at `--z-ic` (the grid IS the mesh; `--nmesh`
+    truncates in Fourier space first), `--catalog`, `--z-out` (required).
+  - **Defaults = the user's new, NON-Abacus sim** (header given 2026-11-19):
+    `--box 338.3` Mpc/h (= 500 Mpc at h 0.6766), `--z-ic 49`, Nmesh 256,
+    Omega0 0.30964144, OmegaLambda 0.6902672, HubbleParam 0.6766,
+    OmegaBaryon 0.04897468 (h and Ω_b don't enter).
+    - Ω_m + Ω_Λ = 1 − 9.136e-5, exactly photons + massless ν, so
+      `--omega-r` defaults to 9.136e-5 (flat, Ω_Λ = 1 − Ω_m − Ω_r).
+    - Which background the sim's code used is UNKNOWN. `--omega-r 0` (Gadget,
+      N-GenIC: no radiation in H(a)) makes D(z_out)/D(49) 0.94 % higher; f
+      barely moves (2e-4).
+  - D(z_out)/D(z_ic) and f(z_out) come from the flat growth ODE: RK4 in
+    ln a, starting on the growing mode; massive ν stay smooth via
+    `--omega-nu`. `--growth`/`--f` override them.
+    - Default cosmology at z_out 0.5: D = 29.945553, f = 0.756735.
+    - Abacus c000 check (`--z-ic 99 --omega-m 0.315192 --omega-nu 0.0014197
+      --omega-r 0`) gives 59.911626 / 0.759070 vs Abacus 59.911485 /
+      0.759070.
+  - Catalog handling:
+    - A centred catalog is auto-detected (any coordinate < −0.01 L);
+      `--no-centre-shift` forces [0, L).
+    - Without z_rsd, vz (km/s) → z + vz(1+z)/(100 E(z)).
+    - Plain arrays are (N, 3|4|6).
+    - The extent is checked against --box: error if outside, warning if it
+      spans < 75 % of the box.
   - It builds the shifted operators (Zel'dovich, CIC, compensation
     "shotnoise" = nbodykit's non-interlaced default) and the library cubic
     d3 = (δ1, |k| ≤ 0.5)³.
@@ -252,6 +272,9 @@ or job-submission changes.
   to 2e-8. A 256³ run takes 41 s on 4 cores, 2.7 GiB. 512³ is ~8× (use a
   compute node). NOT yet compared with lrgs.py on real data: run both on
   hod 2155 at 256 and compare with compare_perr.py.
+  - Growth/f/vz/centring rework: explicit `--growth 1 --f …` is
+    bit-identical to before. The computed-D, [0, L) and vz paths agree to
+    float32 rounding (≤ 3e-5 of each array's scale).
 
 ## Running lrgs.py (field-level bias) over all HODs
 
