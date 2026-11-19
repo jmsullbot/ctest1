@@ -2,9 +2,11 @@
 """Field-level P_err from an initial-condition grid and a galaxy catalog.
 
     python perr_from_ic.py --ic ic_delta_256.npy --catalog catalogs/002155.npy \\
-        --growth 59.911485 --out hod2155_N256
+        --box 2000 --growth 59.911485 --out hod2155_N256
 
 Inputs
+  --box      box side in Mpc/h, required (2000 base, 500 small). The catalog's
+             extent is checked against it.
   --ic       .npy, an N^3 grid of the linear density contrast. The grid IS the
              mesh: everything (operators, galaxies, P(k)) is done at this N.
              --nmesh M (< N) first truncates it in Fourier space to M^3.
@@ -306,6 +308,19 @@ def load_catalog(path, box, centre_shift):
         zr = a[:, 3] if a.shape[1] > 3 else None
     if len(cols[0]) == 0:
         sys.exit("catalog %s is empty" % path)
+    # x, y, z must fit the box: [-L/2, L/2] if centred, else [0, L] (z_rsd may spill; it wraps)
+    lo_ok, hi_ok = (-0.5 * box, 0.5 * box) if centre_shift else (0.0, box)
+    tol = 1e-3 * box
+    lo = min(float(np.min(x)) for x in cols)
+    hi = max(float(np.max(x)) for x in cols)
+    if lo < lo_ok - tol or hi > hi_ok + tol:
+        sys.exit("catalog positions span [%.1f, %.1f] Mpc/h, outside %s for --box %g: wrong --box, "
+                 "or the catalog is %s (%s)" % (lo, hi, "[-L/2, L/2]" if centre_shift else "[0, L]", box,
+                 "not centred on 0" if centre_shift else "centred on 0",
+                 "pass --no-centre-shift" if centre_shift else "drop --no-centre-shift"))
+    span = hi - lo
+    if len(cols[0]) > 1000 and span < 0.75 * box:
+        log("WARNING: catalog spans only %.0f Mpc/h but --box is %g: check --box" % (span, box))
     s = 0.5 * box if centre_shift else 0.0
     xyz = [np.mod(np.asarray(x, np.float64) + s, box) for x in cols]
     zrs = None if zr is None else np.mod(np.asarray(zr, np.float64) + s, box)
@@ -426,7 +441,8 @@ def plot_perr_panels(fn, R, knyq, title):
     for ax, (lab, y, c) in zip(axes, curves):
         ax.plot(k, y, color=c, lw=1.4)
         ax.axhline(1.0 / nbar, color="0.45", ls="--", lw=1.2, label=r"$1/\bar n$")
-        for kk, ls, txt in ((knyq, "--", r"$k_{\rm Nyq}$"), (knyq / 2, ":", r"$k_{\rm Nyq}/2$")):
+        for kk, ls, txt in (() if knyq is None else
+                            ((knyq, "--", r"$k_{\rm Nyq}$"), (knyq / 2, ":", r"$k_{\rm Nyq}/2$"))):
             if kk <= k.max() * 1.05:
                 ax.axvline(kk, color="crimson", lw=0.9, ls=ls)
                 ax.text(kk * 0.97, 0.97, txt, color="crimson", ha="right", va="top",
@@ -464,7 +480,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument("--ic", help="N^3 .npy linear density grid")
     ap.add_argument("--catalog", help="galaxy catalog .npy")
-    ap.add_argument("--box", type=float, default=2000.0, help="box side [Mpc/h] (default 2000)")
+    ap.add_argument("--box", type=float, default=None,
+                    help="box side [Mpc/h], required (e.g. 2000 base, 500 small)")
     ap.add_argument("--growth", type=float, default=1.0, help="D(z_out)/D(z_IC) (default 1)")
     ap.add_argument("--f", type=float, default=0.759070, help="growth rate at z_out (default c000, z=0.5)")
     ap.add_argument("--nmesh", type=int, default=None, help="Fourier-truncate the IC to this N first")
@@ -489,10 +506,13 @@ def main():
     if a.replot:                              # figures only, from saved results
         R = load_results(a.replot)
         nmesh = a.nmesh or 2 * (len(R["k"]) + 1)       # lrgs-style bins: nk = N/2 - 1
-        make_plots(a.replot, np.pi * nmesh / a.box, a.title or os.path.basename(a.replot))
+        make_plots(a.replot, np.pi * nmesh / a.box if a.box else None,
+                   a.title or os.path.basename(a.replot))
         return
     if not (a.ic and a.catalog):
         ap.error("--ic and --catalog are required (or use --replot PREFIX)")
+    if not a.box or a.box <= 0:
+        ap.error("--box is required: the box side in Mpc/h (2000 base, 500 small)")
 
     delta = np.load(a.ic).astype(np.float32)
     if delta.ndim != 3 or len(set(delta.shape)) != 1 or delta.shape[0] % 2:

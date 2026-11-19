@@ -221,7 +221,9 @@ or job-submission changes.
 
 - Standalone numpy/scipy (no nbodykit; vermin: Python 3.2+), written because
   the full lrgs.py was no longer available (the transcript was compacted).
-  - Inputs: `--ic` N³ .npy (the grid IS the mesh; `--nmesh` truncates in
+  - Inputs: `--box` (REQUIRED, no default; catalog extent checked: error
+    if positions exceed the box, warning if they span < 75 % of it), `--ic`
+    N³ .npy (the grid IS the mesh; `--nmesh` truncates in
     Fourier space first), `--growth` D(z_out)/D(z_IC) (59.911485 for
     Abacus z=99 → 0.5), `--catalog`.
   - It builds the shifted operators (Zel'dovich, CIC, compensation
