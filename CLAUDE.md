@@ -276,6 +276,47 @@ or job-submission changes.
     bit-identical to before. The computed-D, [0, L) and vz paths agree to
     float32 rounding (≤ 3e-5 of each array's scale).
 
+## LAE/LBG runs on the new 338.3 Mpc/h sim (2026-11-20)
+
+- run1, run1b = LAE; run1i, run1ii = LBG (two stellar-mass cuts).
+  - n̄ = 1.3e-3 (three runs) and 6.7e-4: the targets of arXiv:2505.03626,
+    whose samples are at z = 3 in MTNG740 and Astrid (ODIN/S5 LAE, S5/CARS
+    LBG).
+  - perr_from_ic.py at 256³ (k_Nyq 2.38), f(3) = 0.981, D(3)/D(49) = 12.31.
+- Real space looks right.
+  - b1 = β1 + 1 ≈ 2.2 (LAE) and 3.9 / 4.25 (LBG); the paper has 1.9–2.7
+    and 3.9–4.2.
+  - n̄P_err ≈ 1.00–1.06 (LAE) and 0.68–0.72 (LBG); the paper's α0 is
+    +0.02 to +0.07 (LAE) and −0.16 to −0.32 (LBG).
+- **The "redshift-space" catalogs carry no RSD.**
+  - The galaxies' own P(k,μ)/P_real is 1.00 ± 0.03 in every μ bin for
+    k 0.1–2. Linear Kaiser at f = 0.98 predicts 1.35–1.74 in the top bin,
+    and FoG would pull it below 1 at high k.
+  - f_eff ≈ 0.0 ± 0.1 for all four runs, both from that ratio
+    (0.05 ≤ k < 0.2) and from the β1 slope vs ⟨μ²⟩ at k < 0.12 (−0.81 to
+    −1.01, i.e. ≈ −f).
+  - That mismatch (the model RSD-displaces by (1+f)Ψ_z; the galaxies were
+    not displaced) explains β1 falling with μ at low k and the large top-μ
+    P_err (LBG n̄P_err up to 1.8).
+  - Below k ~ 0.1 single (k, μ) bins have few modes and scatter by tens of
+    percent. All four samples share one realization, so read the ratio at
+    k ≳ 0.1.
+- Zel'dovich mocks in the same setup (scratch, not in the repo) validate the
+  diagnostic.
+  - A catalog with RSD lands on the Kaiser lines with flat β1 (f_eff
+    0.9–1.3).
+  - A catalog with z_rsd = z gives ratio ≈ 1 and slope ≈ −f (f_eff
+    −0.04 to 0.32). Its top-μ P_err excess grows with bias but is only
+    5–10 %, smaller than the data's.
+- Open questions:
+  - Why is z_rsd ≈ z? Check rms(z_rsd − z), expected ~1.5–2.5 Mpc/h at
+    z = 3 (linear σ_v ≈ 180 km/s × 0.0088 Mpc/h per km/s), and the
+    perr_from_ic.py log line about vz.
+  - Confirm with `--f 0`: the RSD results should then reproduce real space.
+- `plot_fig4.py --run PREFIX LABEL ... --z-out 3 --out X` draws the paper's
+  Fig. 4 (one row per run) and Fig. 5 (r_cc), plus `X_rsdcheck.png` with
+  both diagnostics. It imports perr_from_ic.py from its own directory.
+
 ## Running lrgs.py (field-level bias) over all HODs
 
 - `lrgs.py` (the user's transfer-function script, lives with their Hi-Fi_mocks
