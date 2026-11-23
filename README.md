@@ -508,3 +508,32 @@ sbatch --export=ALL,CONFIG=config/lrg_hod_small_ph3001.yaml,OUTDIR=$PSCRATCH/lrg
 
 Matching a mesh across boxes means keeping the **cell size**, not N:
 N_small = N_base / 4 (576³ ↔ 144³, 1152³ ↔ 288³, 1024³ ↔ 256³).
+
+### All 25 base phases for one HOD row (ph000–ph024)
+
+The same pipeline as for `AbacusSummit_base_c000_ph000`, repeated on every c000
+phase box for one table row (default **1003**), with the field-level step done
+by `perr_from_ic.py` instead of `my_generate_shifted_fields.py` + `lrgs.py`
+(minutes per box instead of ~3 h and 300 GiB at Nmesh 512).
+
+```bash
+bash slurm/check_phases.sh                       # 1. which boxes are on disk (halos, cleaning)
+PHASES=0-24 bash slurm/globus_fetch_ic.sh        # 2. the 25 ic_dens_N576.asdf (~0.8 GB each), one transfer
+sbatch slurm/perlmutter_phases_hod_array.sbatch  # 3. prepare_sim + row 1003, one array task per phase
+sbatch run_phases_perr.sh                        # 4. perr_from_ic.py per phase (Nmesh 512, LOS x,y,z) + ensemble
+bash slurm/check_phases.sh                       #    progress: subs / IC / cat / perr columns
+```
+
+- Step 3 skips `prepare_sim` for boxes whose subsamples exist (ph000), takes
+  `ROWS="1003 2155"` for more rows, and `CLEAN_SUBSAMPLES=1` frees the
+  subsamples it created once the rows are written. Check
+  `du -sh <subsample_dir>/AbacusSummit_base_c000_ph000` first: ×25 of that
+  must fit in scratch.
+- Outputs: `$PSCRATCH/lrg_hods_phases/phNNN/{catalogs,perr}/`, and the
+  ensemble `ensemble_hod1003_N512_{mean_real,mean_rsd}.npy` (results
+  layout), `_bias.txt/.csv` (per-phase bias from `fit_bias.py` with the
+  1811.10640 covariance, scatter vs quoted errors), `_transfer` and `_bias`
+  figures (PNG + PDF).
+- Cross-check against `lrgs.py` on ph000 (it already has row 1003 at
+  Nmesh 512):
+  `python phase_ensemble.py --root $PSCRATCH/lrg_hods_phases --row 1003 --nmesh 512 --phases 0 --lrgs <results_AbacusBase_..._hod=1003_..._Nmesh_512.npy> <results_RSD_..._Nmesh_512_axisrsd_2.npy> --out ph000_vs_lrgs`

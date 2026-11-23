@@ -553,7 +553,36 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Total number of shards (use with --shard)",
     )
+    parser.add_argument(
+        "--sim_name",
+        default=None,
+        help="Override sim_params.sim_name of the config (e.g. "
+             "AbacusSummit_base_c000_ph007). A copy of the config with this "
+             "name is written next to --output and used for prepare_sim and "
+             "the HOD runs; subsamples go to <subsample_dir>/<sim_name>/, so "
+             "different boxes never collide.",
+    )
     return parser.parse_args()
+
+
+def _config_for_sim(path2config: str, sim_name: str, output_file: str) -> str:
+    """Copy of the YAML config with sim_params.sim_name replaced.
+
+    Written as <dir of output_file>/config_<sim_name>.yaml, which also records
+    what each box was run with. prepare_sim only accepts a config path, hence
+    a file rather than an in-memory override.
+    """
+    with open(path2config) as fh:
+        cfg = yaml.safe_load(fh)
+    cfg.setdefault("sim_params", {})["sim_name"] = sim_name
+    out_dir = Path(output_file).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"config_{sim_name}.yaml"
+    with open(path, "w") as fh:
+        fh.write(f"# generated from {path2config} with sim_name = {sim_name}\n")
+        yaml.safe_dump(cfg, fh, sort_keys=False)
+    print(f"Config           : {path}  (sim_name = {sim_name})")
+    return str(path)
 
 
 def _check_config_placeholders(path2config: str) -> None:
@@ -582,6 +611,8 @@ def _check_config_placeholders(path2config: str) -> None:
 def main() -> None:
     args = _parse_args()
     _check_config_placeholders(args.path2config)
+    if args.sim_name:
+        args.path2config = _config_for_sim(args.path2config, args.sim_name, args.output)
 
     if args.prepare_only:
         prepare_simulation(args.path2config)

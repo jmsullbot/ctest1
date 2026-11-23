@@ -11,9 +11,12 @@ and --omega-r.
 
 Inputs
   --ic       .npy, an N^3 grid of the linear density contrast at --z-ic
-             (default 49). The grid IS the mesh: everything (operators,
-             galaxies, P(k)) is done at this N. --nmesh M (< N) first
-             truncates it in Fourier space to M^3.
+             (default 49), or an AbacusSummit-style .asdf IC (e.g.
+             ic_dens_N576.asdf; its header sets --box and --z-ic unless they
+             are given, a contradicting flag is an error, and its GrowthTable
+             is compared with the computed growth). The grid IS the mesh:
+             everything (operators, galaxies, P(k)) is done at this N.
+             --nmesh M (< N) first truncates it in Fourier space to M^3.
   --box      box side in Mpc/h (default 338.3). The catalog's extent is
              checked against it.
   --z-out    the catalog's redshift, required. The IC grid is multiplied by
@@ -393,6 +396,66 @@ def growth(z_ic, z_out, omega_m, omega_nu=0.0, omega_r=0.0, dx=0.002):
 
 
 # ----------------------------------------------------------------- I/O ---
+def _asdf_tree(path):
+    import asdf
+    try:
+        import abacusnbody  # noqa: F401  registers the Blosc ('blsc') codec of AbacusSummit files
+    except ImportError:
+        pass
+    return asdf.open(path, lazy_load=True)
+
+
+def ic_header(path):
+    """Header of an AbacusSummit-style .asdf IC (BoxSize, InitialRedshift, GrowthTable, ...);
+    {} for .npy."""
+    if not path or not path.endswith(".asdf"):
+        return {}
+    with _asdf_tree(path) as af:
+        return dict(af.tree.get("header", {}))
+
+
+def load_ic(path):
+    """The IC grid as float32: a .npy array, or the 3-D array of an .asdf file
+    (e.g. AbacusSummit ic_dens_N576.asdf; reading its Blosc arrays needs abacusutils)."""
+    if not path.endswith(".asdf"):
+        return np.load(path).astype(np.float32)
+    found = []
+
+    def walk(node, name):
+        if isinstance(node, dict):
+            for key, val in node.items():
+                if key not in ("asdf_library", "history", "header"):
+                    walk(val, name + "/" + str(key))
+        elif hasattr(node, "shape") and len(getattr(node, "shape", ())) == 3:
+            found.append((name, node))
+
+    with _asdf_tree(path) as af:
+        walk(af.tree, "")
+        if len(found) > 1:
+            found = [f for f in found if "dens" in f[0].lower()] or found
+        if len(found) != 1:
+            sys.exit("%s: expected one 3-D array, found %s" % (path, [f[0] for f in found] or "none"))
+        try:
+            arr = np.asarray(found[0][1], dtype=np.float32)
+        except Exception as e:                       # typically the Blosc codec
+            sys.exit("%s: cannot read %s (%s). Abacus ICs are Blosc-compressed: install abacusutils "
+                     "in this env (see CLAUDE.md for the Python 3.7 pin)." % (path, found[0][0], e))
+    log("IC %s: array %s %s" % (path, found[0][0], arr.shape))
+    return arr
+
+
+def _resolve(flag, header_value, default, flag_name, key):
+    """Flag if given (checked against the IC header), else the header value, else the default."""
+    if header_value is not None:
+        hv = float(header_value)
+        if flag is not None and abs(flag - hv) > 1e-3 * max(abs(hv), 1.0):
+            sys.exit("%s %g contradicts the IC header %s = %g" % (flag_name, flag, key, hv))
+        if flag is None:
+            log("%s = %g from the IC header (%s)" % (flag_name, hv, key))
+            return hv
+    return default if flag is None else flag
+
+
 def truncate_ic(delta, m):
     """Fourier-truncate an N^3 grid to m^3 (m < N, both even); Nyquist planes zeroed."""
     n = delta.shape[0]
@@ -696,9 +759,11 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument("--ic", help="N^3 .npy linear density grid at --z-ic")
     ap.add_argument("--catalog", help="galaxy catalog .npy")
-    ap.add_argument("--box", type=float, default=BOX, help="box side [Mpc/h] (default %g)" % BOX)
+    ap.add_argument("--box", type=float, default=None,
+                    help="box side [Mpc/h] (default: the .asdf IC header, else %g)" % BOX)
     ap.add_argument("--z-out", type=float, default=None, help="redshift of the catalog (required)")
-    ap.add_argument("--z-ic", type=float, default=Z_IC, help="redshift of the IC grid (default %g)" % Z_IC)
+    ap.add_argument("--z-ic", type=float, default=None,
+                    help="redshift of the IC grid (default: the .asdf IC header, else %g)" % Z_IC)
     ap.add_argument("--omega-m", type=float, default=OMEGA_M,
                     help="Omega_m today: all matter in H(a) (default %g)" % OMEGA_M)
     ap.add_argument("--omega-r", type=float, default=OMEGA_R,
@@ -734,6 +799,9 @@ def main():
     ap.add_argument("--no-plot", action="store_true")
     a = ap.parse_args()
     WORKERS = a.workers
+    hdr = ic_header(a.ic) if (a.ic and not a.replot) else {}
+    a.box = _resolve(a.box, hdr.get("BoxSize"), BOX, "--box", "BoxSize")
+    a.z_ic = _resolve(a.z_ic, hdr.get("InitialRedshift"), Z_IC, "--z-ic", "InitialRedshift")
 
     if a.box <= 0:
         ap.error("--box must be positive (Mpc/h)")
@@ -762,6 +830,14 @@ def main():
             % (a.omega_m, a.omega_nu, a.omega_r, 1.0 - a.omega_m - a.omega_r))
         log("D(z=%g)/D(z=%g) = %.6f, f(z=%g) = %.6f, E(z=%g) = %.6f"
             % (a.z_out, a.z_ic, D, a.z_out, f, a.z_out, hubble_e(a.z_out, a.omega_m, a.omega_r)))
+    gt = hdr.get("GrowthTable") or {}
+    gkey = None if a.z_out is None else next((g for g in gt if abs(float(g) - a.z_out) < 1e-6), None)
+    if gkey is not None and D is not None:
+        dh = float(gt[gkey])
+        log("IC header GrowthTable: D(z=%g)/D(z_ic) = %.6f (computed %.6f, ratio %.6f)" % (a.z_out, dh, D, D / dh))
+        if abs(D / dh - 1) > 1e-3 and a.growth is None:
+            log("WARNING: the cosmology flags give a growth %.3f %% off the IC header's; check --omega-m/"
+                "--omega-nu/--omega-r, or pass --growth %.6f" % (100 * (D / dh - 1), dh))
     if a.growth is not None:
         log("using --growth %g%s" % (a.growth, "" if D is None else " instead of %.6f" % D))
         D = a.growth
@@ -769,7 +845,7 @@ def main():
         log("using --f %g%s" % (a.f, "" if f is None else " instead of %.6f" % f))
         f = a.f
 
-    delta = np.load(a.ic).astype(np.float32)
+    delta = load_ic(a.ic)
     if delta.ndim != 3 or len(set(delta.shape)) != 1 or delta.shape[0] % 2:
         sys.exit("--ic must be a cubic N^3 grid with even N, got %s" % (delta.shape,))
     if a.nmesh and a.nmesh < delta.shape[0]:

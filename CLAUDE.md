@@ -484,6 +484,69 @@ or job-submission changes.
   - α2 and the redshift-space a0's are affected by the factor-2 RSD
     amplitude, so do not trust them yet.
 
+## Multi-phase AbacusBase run: c000 ph000–ph024, HOD row 1003 (2026-11-23)
+
+- The request: reproduce the ph000 pipeline on all 25 c000 phase boxes, for
+  table row 1003 only (not all 10500).
+- Workflow (README "All 25 base phases for one HOD row"):
+  1. `slurm/check_phases.sh`: status table (halos, cleaning, subs, IC, cat,
+     perr). Paths come from the config; it also follows progress.
+  2. `PHASES=0-24 bash slurm/globus_fetch_ic.sh`: one Globus batch for all
+     boxes (`SIMS=` / `PHASES=` / `SIM=`). Missing source files stop it
+     unless `ALLOW_MISSING=1`, and `--sync-level size` makes reruns cheap.
+     Tested with a stub `globus` CLI.
+  3. `sbatch slurm/perlmutter_phases_hod_array.sbatch` (array 0–24, 3 h, HOD
+     env via `_common.sh`).
+     - `generate_lrg_hods.py --sim_name SIM` writes `config_<sim>.yaml` next
+       to `--output`; prepare_sim only accepts a config path.
+     - prepare_sim is skipped when `<subsample_dir>/<sim>/z0.500/` is
+       non-empty (`FORCE_PREPARE=1` redoes it).
+     - `ROWS="1003 ..."` adds rows.
+     - `CLEAN_SUBSAMPLES=1` deletes only the subsamples that task made (marker
+       `.prepared_by_phases_job`), never pre-existing ones such as ph000's.
+     - Outputs: `$PSCRATCH/lrg_hods_phases/phNNN/{catalogs/001003.npy,
+       lrg_hods_rows001003-001004.hdf5}`.
+  4. `sbatch run_phases_perr.sh` runs perr_from_ic.py per phase, then
+     phase_ensemble.py.
+     - Defaults: NMESH 512 (k-space truncation of N576), LOS all, 8 phases at
+       once × 32 FFT threads. Resumable: finished phases are skipped.
+     - `COSMO_ARGS` default `--omega-m 0.315192 --omega-nu 0.0014197
+       --omega-r 0`, which reproduces Abacus c000's own growth. Set
+       `COSMO_ARGS=""` for perr_from_ic's defaults.
+     - Env: CONDA_ENV default abacus (needs asdf and abacusutils for the
+       Blosc ICs).
+- perr_from_ic.py reads `.asdf` ICs directly.
+  - The header's BoxSize and InitialRedshift become the --box/--z-ic
+    defaults (now None), and a contradicting flag is an error.
+  - The header's GrowthTable at z_out is printed, with a WARNING if the
+    computed D is > 0.1 % off.
+  - `.npy` behaviour is unchanged. Results from a `.asdf` IC are
+    bit-identical to the same grid as `.npy`.
+- phase_ensemble.py: ensemble mean in the results layout
+  (`_mean_real/_mean_rsd.npy`), ±1σ phase-scatter figure, per-phase
+  fit_bias fits with "ratio = scatter / mean quoted error", P_err window
+  table.
+  - `--lrgs REAL RSD` compares one phase with lrgs.py. It uses our
+    `_rsd_losz.npy` when it exists, and shifts our real-space β1 / β_G2 by
+    +1 / +½ unless `--real-no-dz`.
+  - On 16 mock realizations the ratios are 0.75–1.02.
+- **Decision:** the field-level step uses perr_from_ic.py, not
+  my_generate_shifted_fields.py + lrgs.py, which needed ~3 h and 306 GiB per
+  box at 512.
+  - **Pending:** validate it against the existing lrgs.py ph000 row-1003
+    results at Nmesh 512 (`phase_ensemble.py --phases 0 --lrgs ...`). That
+    is also the long-open perr_from_ic-vs-lrgs check.
+  - For an exact real-space match, run ph000 once with
+    `EXTRA=--real-no-dz LOS=z`.
+- Unknown and to be flagged: the subsample size per base box (`du -sh` of
+  ph000's) × 25 against the 20 TB quota, on top of the ~8 TB of 10500-row
+  catalogs. ICs are 25 × ~0.8 GB.
+- ph000's IC lives at `$PSCRATCH/abacus_ics_000/` (user layout). The runner
+  expects `$IC_ROOT/<sim>/ic/ic_dens_N576.asdf`: fetch ph000 again or symlink.
+- Not runnable in the sandbox: real AbacusHOD/prepare_sim, real Globus, and
+  Blosc-compressed asdf (no abacusutils). The bash flows were tested with
+  stubs and fake trees.
+
 ## Running lrgs.py (field-level bias) over all HODs
 
 - `lrgs.py` (the user's transfer-function script, lives with their Hi-Fi_mocks
