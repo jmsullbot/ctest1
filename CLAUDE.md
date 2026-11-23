@@ -380,6 +380,15 @@ or job-submission changes.
   - It needs perr_from_ic.py and plot_fig4.py in the submit directory, or
     `CODE=`.
   - Tested in the sandbox on two mocks with `LOS="x z"`.
+  - It activates `CONDA_ENV` itself (default nbodykit_env_25; a setting at
+    the top), like the repo's other job scripts. The first version forgot
+    this, and the user had to point it out.
+    - CONDA_BASE comes from $CONDA_EXE, `conda info --base` or
+      `slurm/env.local.sh`. That file is read for CONDA_BASE only, so its
+      `CONDA_ENV=abacus` cannot override the setting.
+    - `ENV_READY=1` skips activation.
+    - Tested with a stand-in conda (a conda.sh function) on a bare PATH, and
+      in sbatch-like conditions with no CONDA_EXE.
 
 ## Running lrgs.py (field-level bias) over all HODs
 

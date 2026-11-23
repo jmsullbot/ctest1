@@ -1,9 +1,11 @@
 #!/bin/bash
 # Run perr_from_ic.py on several catalogs, then plot them together (plot_fig4.py).
-# Paste the IC and the catalogs below (label without spaces, then path), activate
-# your conda env, and from the directory holding perr_from_ic.py and plot_fig4.py:
+# Paste the IC and the catalogs below (label without spaces, then path), set
+# CONDA_ENV, and from the directory holding perr_from_ic.py and plot_fig4.py:
 #   bash run_perr_samples.sh       (login node: OK for a few 256^3 grids)
 #   sbatch run_perr_samples.sh     (compute node, with the #SBATCH lines)
+# The script activates CONDA_ENV itself (your own conda, found from $CONDA_EXE,
+# `conda info --base` or CONDA_BASE in slurm/env.local.sh); ENV_READY=1 skips that.
 #SBATCH -J perr_samples
 #SBATCH -C cpu
 #SBATCH -q debug
@@ -13,6 +15,7 @@
 ##SBATCH -A <your_allocation>
 set -euo pipefail
 
+CONDA_ENV="${CONDA_ENV:-nbodykit_env_25}"   # env with numpy, scipy, matplotlib (name or prefix)
 IC=/path/to/ic_256.npy             # linear density grid at z = 49
 ZOUT=3
 LOS="all"                          # z | x | y | several, e.g. "x z" | all (mean of the three)
@@ -27,7 +30,26 @@ CATALOGS=(                         # "label  catalog.npy"
 CODE="${CODE:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}}"
 WORKERS="${WORKERS:-$([[ -n ${SLURM_JOB_ID:-} ]] && echo 32 || echo 8)}"   # FFT threads
 [[ -f $CODE/perr_from_ic.py && -f $CODE/plot_fig4.py ]] || { echo "no perr_from_ic.py / plot_fig4.py in $CODE (set CODE=)"; exit 1; }
-python -c "import numpy, scipy, matplotlib" || { echo "activate the conda env with numpy, scipy, matplotlib first"; exit 1; }
+
+# conda: your own install, never a module. A batch job inherits PATH but not the
+# `conda` shell function, so source conda.sh and activate here.
+if [[ "${ENV_READY:-0}" != 1 ]]; then
+    want="$CONDA_ENV"                  # slurm/env.local.sh is read for CONDA_BASE only
+    set +u
+    # shellcheck disable=SC1091
+    [[ -f $CODE/slurm/env.local.sh ]] && source "$CODE/slurm/env.local.sh"
+    CONDA_ENV="$want"
+    if [[ -z ${CONDA_BASE:-} ]]; then
+        if [[ -n ${CONDA_EXE:-} ]]; then CONDA_BASE="$(cd "$(dirname "$CONDA_EXE")/.." && pwd)"
+        else CONDA_BASE="$(conda info --base 2>/dev/null || true)"; fi
+    fi
+    [[ -f ${CONDA_BASE:-}/etc/profile.d/conda.sh ]] || { echo "cannot find conda: pass CONDA_BASE=\$(conda info --base)"; exit 1; }
+    source "$CONDA_BASE/etc/profile.d/conda.sh"
+    conda activate "$CONDA_ENV" || { echo "cannot activate conda env '$CONDA_ENV' (set CONDA_ENV=)"; exit 1; }
+    set -u
+fi
+echo "python: $(command -v python)  (conda env: ${CONDA_DEFAULT_ENV:-?})"
+python -c "import numpy, scipy, matplotlib" || { echo "conda env '$CONDA_ENV' lacks numpy, scipy or matplotlib"; exit 1; }
 mkdir -p "$OUTDIR"
 
 runs=()
