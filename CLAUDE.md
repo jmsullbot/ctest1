@@ -313,6 +313,14 @@ or job-submission changes.
     z = 3 (linear σ_v ≈ 180 km/s × 0.0088 Mpc/h per km/s), and the
     perr_from_ic.py log line about vz.
   - Confirm with `--f 0`: the RSD results should then reproduce real space.
+  - 2026-11-23: the user suspects their own RSD conversion factor.
+    - Correct value at z = 3 (default cosmology): Δz = v_z(1+z)/(100 E(z))
+      = 0.00883 Mpc/h per km/s.
+    - The data allow at most ~10–25 % of that shift, so the error is a
+      factor ≥ ~4. Candidates: (1+z) dropped (×1/4) or inverted (×1/16),
+      kpc vs Mpc (×10⁻³), or box units (×1/338).
+    - A Gadget √a velocity convention would make RSD too strong, so it is
+      not the cause.
 - `plot_fig4.py --run PREFIX LABEL ... --z-out 3 --out X` draws the paper's
   Fig. 4 (one row per run) and Fig. 5 (r_cc), plus `X_rsdcheck.png` with
   both diagnostics. It imports perr_from_ic.py from its own directory.
