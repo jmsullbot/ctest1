@@ -126,6 +126,13 @@ or job-submission changes.
   When changing scripts, offer the inline diff, not only a zip.
 - Deliver the repo as a zip (`git archive`) — the user does not use
   GitHub keys on Perlmutter.
+  - **Since 2026-11-23, deliver changed files individually instead of
+    whole-repo zips.** The user has added their own files to repo
+    directories on Perlmutter, and plans to fix git later.
+  - Send each new file with its repo path, plus one patch per modified file
+    (`git diff <their version> HEAD -- <file>`, applied with `patch -p1`
+    from the repo root). Check that each patch applies to their version.
+  - Optionally add a tar holding only the changed files at their paths.
 - Development happens on branch `old_LRG`; push there.
 
 ## Centrals / satellites
