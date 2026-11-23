@@ -41,10 +41,18 @@ Inputs
              of columns 1-3 are RSD positions. --cols6 rsd|vel overrides.
              A catalog with vz (peculiar velocity in km/s) but no z_rsd gets
              z_rsd = z + vz (1 + z_out) / (100 E(z_out)).
-             The line of sight is z. The shift z_rsd - z is checked and
-             logged: a real RSD shift has no mean and does not follow z, so
-             a wrong column or wrong units trigger a WARNING (repeated at the
-             end of the run).
+             The shift z_rsd - z is checked and logged. A real RSD shift has
+             no mean and does not track z, so a shift with rms < 0.1 Mpc/h, a
+             mean above 0.2 rms or a correlation with z above 0.9 (signs of a
+             wrong column or wrong units) triggers a WARNING, repeated at the
+             end of the run.
+  --los      line(s) of sight for redshift space: z (default), x, y, any
+             several, or all. For x or y the problem is rotated so that axis
+             becomes the last one (IC grid transposed, catalog columns
+             permuted), so everything else is unchanged. Each needs the
+             catalog's redshift-space coordinate along that axis: an xrsd /
+             yrsd column (6 columns), an x_rsd / xrsd ... field, or vx / vy
+             velocities. A 4-column catalog has z only.
              Positions in [0, L) are used as they are. Positions centred on 0
              (any coordinate < 0, as in AbacusHOD catalogs) are shifted by
              +L/2, as lrgs.py does. --no-centre-shift forces [0, L).
@@ -52,7 +60,9 @@ Inputs
 Outputs (<out> from --out)
   <out>_real.npy  [k, P_err, P_true, P_model, r, beta1, beta2, betaG2, beta3, nbar]
   <out>_rsd.npy   [k, mu_centers, P_err, P_true, P_model, r, beta1, beta2, betaG2,
-                   beta3, nbar], each (k, mu) quantity an (nk, Nmu) array
+                   beta3, nbar], each (k, mu) quantity an (nk, Nmu) array. With
+                   several lines of sight this is their mean (r from the mean
+                   powers), and <out>_rsd_los<a>.npy holds each one.
   <out>_transfer.png  Fig. 4 of arXiv:2505.03626 style: one row of panels
                   beta_1, beta_2, beta_G2, beta_3, P_err; real space black,
                   mu bins in darkening shades; P_err in h^-3 Mpc^3 with 1/nbar
@@ -62,7 +72,8 @@ The .npy layout is lrgs.py's, so fit_perr.py and compare_perr.py read these
 directly, e.g. to compare with the lrgs.py results for the same HOD.
 --replot <out> redraws both figures from saved results without recomputing.
 --save-fields DIR also writes the shifted fields in the generator's layout
-(shifted_fields_real_N_<N>_c_0.npy, shifted_fields_redshift_axisrsd_2_N_<N>_c_0.npy).
+(shifted_fields_real_N_<N>_c_0.npy, shifted_fields_redshift_axisrsd_<a>_N_<N>_c_0.npy
+with a = 0, 1, 2 for line of sight x, y, z, in the original orientation).
 
 Method (Schmittfull et al. 2019, 2021; the public Hi-Fi_mocks library)
   1. delta_1(q) = D(z_out)/D(z_ic) * IC (mean removed) at the N^3 grid points q.
@@ -408,24 +419,32 @@ def cols6_layout(a, box):
              "--cols6 vel." % med)
 
 
-def load_catalog(path, box, force_corner, vz_to_dist, cols6="auto"):
-    """Positions wrapped into [0, L): ([x, y, z], z_rsd or None, warning or None).
-    vz_to_dist [Mpc/h per km/s] makes z_rsd from vz when the catalog has no z_rsd
-    (None: not available, so real space only)."""
+AXES = "xyz"
+LOS_PERM = {0: (1, 2, 0), 1: (2, 0, 1), 2: (0, 1, 2)}    # axis order with the line of sight last (cyclic)
+
+
+def load_catalog(path, box, force_corner, vz_to_dist, cols6="auto", axes=(2,)):
+    """Positions wrapped into [0, L), for the line-of-sight axes asked for:
+    ([x, y, z], {axis: redshift-space coordinate along it, or None}, {axis: warning or None}).
+    vz_to_dist [Mpc/h per km/s] turns velocities into redshift-space coordinates when the
+    catalog has none (None: not available)."""
     c = np.load(path)
-    vz = zr = None
+    red = dict((ax, None) for ax in axes)
+    vel = dict((ax, None) for ax in axes)
     if c.dtype.names:
-        missing = [k for k in ("x", "y", "z") if k not in c.dtype.names]
+        missing = [q for q in AXES if q not in c.dtype.names]
         if missing:
             sys.exit("catalog %s has no %s (fields: %s)" % (path, ", ".join(missing), ", ".join(c.dtype.names)))
         cols = [c["x"], c["y"], c["z"]]
-        for name in ("z_rsd", "zrsd"):
-            if name in c.dtype.names:
-                zr = c[name]
-                log("redshift-space z: field '%s'" % name)
-                break
-        if zr is None and "vz" in c.dtype.names:
-            vz = c["vz"]
+        for ax in axes:
+            q = AXES[ax]
+            for name in (q + "_rsd", q + "rsd"):
+                if name in c.dtype.names:
+                    red[ax] = c[name]
+                    log("redshift-space %s: field '%s'" % (q, name))
+                    break
+            if red[ax] is None and "v" + q in c.dtype.names:
+                vel[ax] = c["v" + q]
     else:
         a = np.asarray(c)
         if a.ndim != 2 or a.shape[1] not in (3, 4, 6):
@@ -433,17 +452,14 @@ def load_catalog(path, box, force_corner, vz_to_dist, cols6="auto"):
                      "with columns x y z | x y z z_rsd | x y z xrsd yrsd zrsd or x y z vx vy vz; got shape %s"
                      % (a.shape,))
         cols = [a[:, 0], a[:, 1], a[:, 2]]
-        if a.shape[1] == 4:
-            zr = a[:, 3]
+        if a.shape[1] == 4 and 2 in axes:
+            red[2] = a[:, 3]
         elif a.shape[1] == 6:
             kind, med = (cols6, None) if cols6 != "auto" else cols6_layout(a, box)
             how = "--cols6" if med is None else "detected: median |col 4-6 - col 1-3| = %.2f Mpc/h" % med
-            if kind == "rsd":
-                zr = a[:, 5]
-                log("6 columns read as x y z xrsd yrsd zrsd (%s); redshift-space z = zrsd" % how)
-            else:
-                vz = a[:, 5]
-                log("6 columns read as x y z vx vy vz (%s)" % how)
+            for ax in axes:
+                (red if kind == "rsd" else vel)[ax] = a[:, 3 + ax]
+            log("6 columns read as %s (%s)" % ("x y z xrsd yrsd zrsd" if kind == "rsd" else "x y z vx vy vz", how))
     if len(cols[0]) == 0:
         sys.exit("catalog %s is empty" % path)
     # centred on 0 if any coordinate is clearly negative; x, y, z must then fit
@@ -461,32 +477,43 @@ def load_catalog(path, box, force_corner, vz_to_dist, cols6="auto"):
     span = hi - lo
     if len(cols[0]) > 1000 and span < 0.75 * box:
         log("WARNING: catalog spans only %.0f Mpc/h but --box is %g: check --box" % (span, box))
-    if zr is None and vz is not None:
-        if vz_to_dist is None:
-            log("catalog has vz but no z_rsd: pass --z-out to convert vz")
-        else:
-            zr = np.asarray(cols[2], np.float64) + vz_to_dist * np.asarray(vz, np.float64)
-            log("z_rsd = z + vz * %.6g Mpc/h per km/s = (1 + z_out) / (100 E(z_out))" % vz_to_dist)
-    # A real RSD shift has (statistically) zero mean and is unrelated to position.
-    # A wrong column or wrong units usually break one of these.
-    warning = None
-    if zr is not None:
-        z64 = np.asarray(cols[2], np.float64)
-        sh = _wrap(np.asarray(zr, np.float64) - z64, box)
+    # A real RSD shift has (statistically) zero mean. Its correlation with position is
+    # small but not zero: box-scale modes carry much of the displacement, and one
+    # fundamental mode alone can correlate up to +-0.78 with the coordinate (mock,
+    # 338 Mpc/h: -0.11 and +0.17). A shift built from the position itself (a wrong
+    # column) correlates at ~1, hence the 0.9 threshold. Wrong units shrink the rms.
+    warnings = dict((ax, None) for ax in axes)
+    for ax in axes:
+        q = AXES[ax]
+        if red[ax] is None and vel[ax] is not None:
+            if vz_to_dist is None:
+                log("catalog has v%s but no %s_rsd: pass --z-out to convert v%s" % (q, q, q))
+            else:
+                red[ax] = np.asarray(cols[ax], np.float64) + vz_to_dist * np.asarray(vel[ax], np.float64)
+                log("%s_rsd = %s + v%s * %.6g Mpc/h per km/s = (1 + z_out) / (100 E(z_out))" % (q, q, q, vz_to_dist))
+        if red[ax] is None:
+            continue
+        p64 = np.asarray(cols[ax], np.float64)
+        sh = _wrap(np.asarray(red[ax], np.float64) - p64, box)
         rms, mean = float(sh.std()), float(sh.mean())
-        corr = float(np.corrcoef(sh, z64)[0, 1]) if rms > 0 else 0.0
-        log("RSD shift z_rsd - z: rms %.3f Mpc/h, mean %+.3f Mpc/h, correlation with z %+.3f" % (rms, mean, corr))
+        corr = float(np.corrcoef(sh, p64)[0, 1]) if rms > 0 else 0.0
+        log("RSD shift %s_rsd - %s: rms %.3f Mpc/h, mean %+.3f Mpc/h, correlation with %s %+.3f"
+            % (q, q, rms, mean, q, corr))
         if rms < 0.1:
-            warning = "z_rsd - z has rms %.3f Mpc/h: the redshift-space positions carry (almost) no RSD" % rms
-        elif abs(mean) > 0.2 * rms or abs(corr) > 0.2:
-            warning = ("z_rsd - z has mean %+.2f Mpc/h and correlation %+.2f with z (rms %.2f Mpc/h). A real RSD "
-                       "shift has neither: z_rsd is probably built from the wrong column or units" % (mean, corr, rms))
-        if warning:
-            log("WARNING: " + warning)
+            warnings[ax] = ("%s_rsd - %s has rms %.3f Mpc/h: the redshift-space positions carry (almost) no RSD"
+                            % (q, q, rms))
+        elif abs(mean) > 0.2 * rms or abs(corr) > 0.9:
+            warnings[ax] = ("%s_rsd - %s has mean %+.2f Mpc/h and correlation %+.2f with %s (rms %.2f Mpc/h). A real "
+                            "RSD shift has neither: %s_rsd is probably built from the wrong column or units"
+                            % (q, q, mean, corr, q, rms, q))
+        if warnings[ax]:
+            log("WARNING: " + warnings[ax])
     s = 0.5 * box if centred else 0.0
     xyz = [np.mod(np.asarray(x, np.float64) + s, box) for x in cols]
-    zrs = None if zr is None else np.mod(np.asarray(zr, np.float64) + s, box)
-    return xyz, zrs, warning
+    for ax in axes:
+        if red[ax] is not None:
+            red[ax] = np.mod(np.asarray(red[ax], np.float64) + s, box)
+    return xyz, red, warnings
 
 
 def galaxy_field(x, y, z, mesh):
@@ -505,12 +532,27 @@ def save_result(fn, items):
     np.save(fn, res, allow_pickle=True)
 
 
-def save_fields(path, fields, mesh):
+def save_fields(path, fields, mesh, perm=None):
+    """perm: the axis order the fields were computed in (a rotated line of sight);
+    they are transposed back to the original orientation."""
     n = mesh.n
     arr = np.empty((len(fields), n, n, n), np.float32)
+    inv = None if perm is None else tuple(int(i) for i in np.argsort(perm))
     for i, F in enumerate(fields):     # back to the painted (compensated) real grid
-        arr[i] = irfftn(F * np.float32(n ** 3), n)
+        g = irfftn(F * np.float32(n ** 3), n)
+        arr[i] = g if inv is None else g.transpose(inv)
     np.save(path, arr)
+
+
+def mean_rsd(items):
+    """Mean of per-line-of-sight redshift-space results (same layout); r is recomputed
+    from the mean cross and auto powers rather than averaged."""
+    pe, pt, pm = (np.mean([it[i] for it in items], axis=0) for i in (2, 3, 4))
+    cross = np.mean([it[5] * np.sqrt(it[3] * it[4]) for it in items], axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r = cross / np.sqrt(pt * pm)
+    betas = [np.mean([it[6 + j] for it in items], axis=0) for j in range(4)]
+    return [items[0][0], items[0][1], pe, pt, pm, r] + betas + [items[0][-1]]
 
 
 # --------------------------------------------------------------- plots ---
@@ -665,6 +707,9 @@ def main():
                     help="6-column catalogs: rsd = x y z xrsd yrsd zrsd, vel = x y z vx vy vz "
                          "(default: detected from the data)")
     ap.add_argument("--no-rsd", action="store_true", help="real space only")
+    ap.add_argument("--los", nargs="+", choices=["x", "y", "z", "all"], default=["z"],
+                    help="line(s) of sight in redshift space (default z; all = x y z). With several, "
+                         "<out>_rsd.npy is their mean and <out>_rsd_los<a>.npy each one")
     ap.add_argument("--real-no-dz", action="store_true",
                     help="real space without the fixed delta_Z term (lrgs.py-like; beta_1 -> b_1)")
     ap.add_argument("--title", default=None, help="figure title (default: output name)")
@@ -721,8 +766,14 @@ def main():
     n = delta.shape[0]
     delta *= np.float32(D)
     delta -= delta.mean()
-    out = a.out or "%s_N%d" % (os.path.splitext(os.path.basename(a.catalog))[0], n)
-    targets = [out + "_real.npy"] + ([] if a.no_rsd else [out + "_rsd.npy"])
+    req = set(AXES) if "all" in a.los else set(a.los)
+    los_axes = [ax for ax in (2, 0, 1) if AXES[ax] in req]     # z first: it reuses the real-space operators
+    lostag = "" if a.no_rsd or los_axes == [2] else "_los" + "".join(AXES[ax] for ax in sorted(los_axes))
+    out = a.out or "%s_N%d%s" % (os.path.splitext(os.path.basename(a.catalog))[0], n, lostag)
+    multi = len(los_axes) > 1 and not a.no_rsd
+    targets = [out + "_real.npy"]
+    if not a.no_rsd:
+        targets += [out + "_rsd.npy"] + ([out + "_rsd_los%s.npy" % AXES[ax] for ax in los_axes] if multi else [])
     if not a.overwrite:
         clash = [t for t in targets if os.path.exists(t)]
         if clash:
@@ -733,21 +784,28 @@ def main():
     log("IC %s: %d^3, box %g Mpc/h, times D = %.6f, std(delta_1) = %.4f"
         % (a.ic, n, a.box, D, float(delta.std())))
     mesh = Mesh(n, a.box, a.nmu, a.compensation)
-    xyz, zrsd, rsd_warning = load_catalog(a.catalog, a.box, a.no_centre_shift, vz_to_dist, a.cols6)
+    xyz, red, rsd_warn = load_catalog(a.catalog, a.box, a.no_centre_shift, vz_to_dist, a.cols6,
+                                      [] if a.no_rsd else los_axes)
     ngal = len(xyz[0])
     nbar = ngal / a.box ** 3
-    rsd = (not a.no_rsd) and zrsd is not None
-    if not a.no_rsd and zrsd is None:
+    rsd_axes = [] if a.no_rsd else [ax for ax in los_axes if red[ax] is not None]
+    lacking = [] if a.no_rsd else [AXES[ax] for ax in los_axes if red[ax] is None]
+    if lacking and los_axes == [2]:
         log("catalog has no z_rsd: real space only")
+    elif lacking:
+        sys.exit("catalog has no redshift-space coordinate for line of sight %s (needs %s)"
+                 % (", ".join(lacking), "; ".join("a %srsd column, a %s_rsd or %srsd field, or v%s" % (q, q, q, q)
+                                                  for q in lacking)))
     log("catalog %s: %d galaxies, nbar = %.4e (h/Mpc)^3" % (a.catalog, ngal, nbar))
 
-    ops, psi = lagrangian_fields(delta, mesh, a.d3_kmax, rsd)
-    del delta
+    ops, psi = lagrangian_fields(delta, mesh, a.d3_kmax, 2 in rsd_axes)
+    if all(ax == 2 for ax in rsd_axes):
+        delta = None                                   # not needed again
     log("Lagrangian operators and displacement done")
 
     # ------------------------------------------------------- real space
     names = ["d1", "d2", "G2", "d3"]
-    painted = cic_paint(shifted_positions(psi, mesh, None), n, [None] + [ops[k].ravel() for k in names])
+    painted = cic_paint(shifted_positions(psi, mesh, None), n, [None] + [ops[nm].ravel() for nm in names])
     F = [to_fourier(p, mesh) for p in painted]
     del painted
     F[0][0, 0, 0] = 0                                  # delta_Z: remove the mean
@@ -765,25 +823,47 @@ def main():
     del O, dg
 
     # -------------------------------------------------- redshift space
-    perr_s = None
-    if rsd:
+    mu_c = 0.5 * (mesh.mu_edges[1:] + mesh.mu_edges[:-1])
+    per_los = []
+    for ax in rsd_axes:                      # z first: it reuses the operators built above
+        perm = LOS_PERM[ax]
+        if ax != 2:                          # rotate so this line of sight is the last axis
+            ops = psi = None
+            ops, psi = lagrangian_fields(np.ascontiguousarray(delta.transpose(perm)), mesh, a.d3_kmax, True)
+            log("line of sight %s: operators rebuilt on the rotated grid" % AXES[ax])
         names = ["d1", "d2", "G2", "G2par", "d3"]
         painted = cic_paint(shifted_positions(psi, mesh, f), n,
-                            [None] + [ops[k].ravel() for k in names])
+                            [None] + [ops[nm].ravel() for nm in names])
+        ops = psi = None
         F = [to_fourier(p, mesh) for p in painted]
         del painted
         F[0][0, 0, 0] = 0                                  # dz: remove the mean
         dz, d1, d2, g2, g2par, d3 = F
+        del F
         fixed = dz - np.float32(3.0 / 7.0 * f) * g2par
         O = orthogonalize([d1, d2, g2, d3], mesh, two_d=True)
-        dgs = galaxy_field(xyz[0], xyz[1], zrsd, mesh)
+        pos = list(xyz)
+        pos[ax] = red[ax]                                  # redshift-space coordinate along the LOS
+        pos = [pos[p] for p in perm]
+        dgs = galaxy_field(pos[0], pos[1], pos[2], mesh)
         perr_s, ptrue_s, pmodel_s, r_s, betas_s = fit_transfer(dgs, O, fixed, mesh, two_d=True)
-        mu_c = 0.5 * (mesh.mu_edges[1:] + mesh.mu_edges[:-1])
-        save_result(out + "_rsd.npy", [k, mu_c, perr_s, ptrue_s, pmodel_s, r_s] + betas_s + [nbar])
-        log("redshift space done -> %s_rsd.npy" % out)
+        item = [k, mu_c, perr_s, ptrue_s, pmodel_s, r_s] + betas_s + [nbar]
+        per_los.append(item)
+        if multi:
+            save_result(out + "_rsd_los%s.npy" % AXES[ax], item)
+            log("line of sight %s done -> %s_rsd_los%s.npy" % (AXES[ax], out, AXES[ax]))
         if a.save_fields:
-            save_fields(os.path.join(a.save_fields, "shifted_fields_redshift_axisrsd_2_N_%d_c_0.npy" % n),
-                        [dz, d1, O[1], O[2], g2par, O[3]], mesh)
+            save_fields(os.path.join(a.save_fields, "shifted_fields_redshift_axisrsd_%d_N_%d_c_0.npy" % (ax, n)),
+                        [dz, d1, O[1], O[2], g2par, O[3]], mesh, None if ax == 2 else perm)
+        del dz, d1, d2, g2, g2par, d3, fixed, O, dgs, pos
+    perr_s = None
+    if per_los:
+        res = per_los[0] if len(per_los) == 1 else mean_rsd(per_los)
+        save_result(out + "_rsd.npy", res)
+        perr_s = res[2]
+        log("redshift space done -> %s_rsd.npy%s" % (out, "" if len(per_los) == 1 else
+            " (mean over lines of sight %s)" % ", ".join(AXES[ax] for ax in sorted(rsd_axes))))
+    rsd = perr_s is not None
 
     # ------------------------------------------------------- summary
     print("\nmean nbar*P_err per k window:  real" + ("".join(
@@ -798,11 +878,15 @@ def main():
         print(line)
     if not a.no_plot:
         model = "real space without $\\delta_Z$" if a.real_no_dz else "Eq. 16 model"
+        if rsd_axes and rsd_axes != [2]:
+            model += ", LOS %s%s" % ("mean of " if len(rsd_axes) > 1 else "",
+                                     ", ".join(AXES[ax] for ax in sorted(rsd_axes)))
         zlab = "" if a.z_out is None else "$z=%g$, " % a.z_out
         make_plots(out, mesh.knyq, a.title or "%s,  %s$N_{\\rm mesh}=%d$, $L=%g\\,h^{-1}$Mpc  (%s)"
                    % (os.path.basename(out), zlab, n, a.box, model))
-    if rsd_warning and rsd:
-        log("WARNING (repeated): %s. Do not trust the redshift-space results." % rsd_warning)
+    for ax in rsd_axes:
+        if rsd_warn[ax]:
+            log("WARNING (repeated): %s. Do not trust the redshift-space results." % rsd_warn[ax])
     log("done")
 
 

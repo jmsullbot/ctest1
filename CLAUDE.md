@@ -326,8 +326,13 @@ or job-submission changes.
       velocities; otherwise error), with `--cols6 rsd|vel` to override.
       Structured arrays may name the field `zrsd`.
     - New guard: z_rsd − z is logged (rms, mean, correlation with z). A
-      WARNING fires if rms < 0.1 Mpc/h, or if |mean| > 0.2 rms or
-      |corr| > 0.2, and is repeated at the end of the run.
+      WARNING fires if rms < 0.1 Mpc/h, |mean| > 0.2 rms or |corr| > 0.9,
+      and is repeated at the end of the run.
+      - The correlation threshold was 0.2 at first. It was raised because
+        genuine shifts correlate with position through box-scale modes:
+        −0.11 / +0.17 in the 338 Mpc/h mock, up to ±0.78 for a single
+        fundamental mode.
+      - A shift built from the position itself (the bug) gives ≈ 0.98.
     - Checked on the LBG-like mock:
       - The 6-column RSD, 6-column velocity and structured `zrsd` layouts
         give results bit-identical to the structured `z_rsd` reference.
@@ -339,6 +344,42 @@ or job-submission changes.
 - `plot_fig4.py --run PREFIX LABEL ... --z-out 3 --out X` draws the paper's
   Fig. 4 (one row per run) and Fig. 5 (r_cc), plus `X_rsdcheck.png` with
   both diagnostics. It imports perr_from_ic.py from its own directory.
+- `perr_from_ic.py --los z|x|y|several|all` (2026-11-23):
+  - For x or y, the IC grid is transposed cyclically (x → (1,2,0),
+    y → (2,0,1)) and the catalog columns are permuted, so the LOS is the
+    last axis. The operators are rebuilt there.
+  - The LOS z path reuses the real-space operators and is bit-identical to
+    before. Real space is computed once in the original frame, so it is
+    bit-identical for any --los.
+  - With several LOS, each goes to `<out>_rsd_los<a>.npy`, and
+    `<out>_rsd.npy` is their mean (r = mean cross / √(mean P_true · mean
+    P_model)).
+  - A default output name gets `_los<axes>` unless the LOS is z.
+  - `--save-fields` writes `..._axisrsd_<a>_...` in the original
+    orientation.
+  - Tests on the mock:
+    - LOS x / y on the original inputs equal LOS z on pre-rotated inputs
+      to 2e-6.
+    - Saved fields land in the right orientation (5e-4 of std, against
+      ~400× for the wrong one).
+    - In the 3-LOS mean, P_err equals the average of the three.
+    - Averaging two LOS gives f_eff 0.99–1.00 (true 0.98), against
+      0.91 / 1.10 for one LOS.
+  - Caveat: the same physical problem computed in two orientations differs
+    by ~1e-3 at k ≳ 1.5. The odd-derivative operators (Ψ, off-diagonal G2)
+    are ambiguous on the Nyquist planes, and rfft treats the last axis
+    differently. This is harmless, but it means rotated runs are not
+    bit-identical.
+- `run_perr_samples.sh`: paste IC, ZOUT, LOS and "label catalog" lines at
+  the top.
+  - Run it with `bash` (login node) or `sbatch` (cpu, debug, 30 min); FFT
+    threads are 8 on a login node and 32 in a job.
+  - It runs perr_from_ic.py on each catalog (logs to `$OUTDIR/<label>.log`),
+    then plot_fig4.py on all of them.
+  - At the end it greps the layout and RSD-shift lines and any WARNING.
+  - It needs perr_from_ic.py and plot_fig4.py in the submit directory, or
+    `CODE=`.
+  - Tested in the sandbox on two mocks with `LOS="x z"`.
 
 ## Running lrgs.py (field-level bias) over all HODs
 
