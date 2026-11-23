@@ -153,9 +153,19 @@ or job-submission changes.
 
 ## Initial conditions
 
-- The public disk copy has **no `ic/` directory** for `base_c000_ph000`,
-  and the HPSS copy (`/nersc/projects/desi/cosmosim/Abacus/`) returns
-  `HPSS_EACCES` for this user. The ICs were obtained via the Globus web
+- **Correction (2026-11-23): the ICs ARE on the public CFS disk, in a
+  separate IC tree.**
+  - The user found it with `ls <root> | grep -i ic`; there is no per-box
+    `<sim>/ic/`, which is all the earlier note checked.
+  - The exact layout is not yet recorded here; ask for the
+    `find <icdir> -maxdepth 3 -name ic_dens_N576.asdf` output.
+  - So Globus is NOT needed for the multi-phase run. Symlink each phase's
+    file into `$PSCRATCH/AbacusSummit/<sim>/ic/ic_dens_N576.asdf`, which is
+    what run_phases_perr.sh and check_phases.sh expect.
+  - The HPSS copy (`/nersc/projects/desi/cosmosim/Abacus/`) still returns
+    `HPSS_EACCES` for this user.
+- Earlier, wrong belief: "the public disk copy has **no `ic/` directory** for
+  `base_c000_ph000`". The ICs were then obtained via the Globus web
   interface and live at (user-chosen, not the official layout):
       `$PSCRATCH/abacus_ics_000/`        base: `ic_{dens,disp}_N{576,1152,2048}.asdf`
       `$PSCRATCH/small_abacus_ics_000/`  small: `ic_{dens,disp}_N576.asdf`
