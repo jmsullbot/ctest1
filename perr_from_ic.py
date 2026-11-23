@@ -305,15 +305,20 @@ def orthogonalize(ops, mesh, two_d):
     return out
 
 
-def fit_transfer(dg, ops, fixed, mesh, two_d):
-    """beta_i per bin for mutually orthogonal ops; P_err, P_true, P_model, r."""
+def fit_transfer(dg, ops, fixed, mesh, two_d, pops=None):
+    """beta_i per bin for mutually orthogonal ops; P_err, P_true, P_model, r.
+    pops, if a list, receives each operator's power P_O = V <|O|^2> per bin (for
+    the transfer-function errors of arXiv:1811.10640, Var beta = P_err / (N P_O))."""
     target = dg if fixed is None else dg - fixed
     model = np.zeros_like(dg) if fixed is None else fixed.copy()
     betas = []
     for o in ops:
+        oo = mesh.cross(o, o, two_d)
         with np.errstate(invalid="ignore", divide="ignore"):
-            b = mesh.cross(target, o, two_d) / mesh.cross(o, o, two_d)
+            b = mesh.cross(target, o, two_d) / oo
         betas.append(b)
+        if pops is not None:
+            pops.append(mesh.vol * oo)
         model += mesh.apply(b, two_d) * o
     err = dg - model
     V = mesh.vol
@@ -820,18 +825,20 @@ def main():
     O = orthogonalize(F[1:], mesh, two_d=False)
     del F
     dg = galaxy_field(xyz[0], xyz[1], xyz[2], mesh)
-    perr, ptrue, pmodel, r, betas = fit_transfer(dg, O, fixed, mesh, two_d=False)
+    pops = []
+    perr, ptrue, pmodel, r, betas = fit_transfer(dg, O, fixed, mesh, two_d=False, pops=pops)
     del fixed
     k = mesh.kmean
     save_result(out + "_real.npy", [k, perr, ptrue, pmodel, r] + betas + [nbar])
-    log("real space done -> %s_real.npy" % out)
+    save_result(out + "_real_ops.npy", [k, mesh.wsum1.copy()] + pops)
+    log("real space done -> %s_real.npy (+ _real_ops.npy: modes and operator powers per bin)" % out)
     if a.save_fields:
         save_fields(os.path.join(a.save_fields, "shifted_fields_real_N_%d_c_0.npy" % n), O, mesh)
     del O, dg
 
     # -------------------------------------------------- redshift space
     mu_c = 0.5 * (mesh.mu_edges[1:] + mesh.mu_edges[:-1])
-    per_los = []
+    per_los, per_los_ops = [], []
     for ax in rsd_axes:                      # z first: it reuses the operators built above
         perm = LOS_PERM[ax]
         if ax != 2:                          # rotate so this line of sight is the last axis
@@ -853,11 +860,15 @@ def main():
         pos[ax] = red[ax]                                  # redshift-space coordinate along the LOS
         pos = [pos[p] for p in perm]
         dgs = galaxy_field(pos[0], pos[1], pos[2], mesh)
-        perr_s, ptrue_s, pmodel_s, r_s, betas_s = fit_transfer(dgs, O, fixed, mesh, two_d=True)
+        pops_s = []
+        perr_s, ptrue_s, pmodel_s, r_s, betas_s = fit_transfer(dgs, O, fixed, mesh, two_d=True, pops=pops_s)
         item = [k, mu_c, perr_s, ptrue_s, pmodel_s, r_s] + betas_s + [nbar]
+        ops_item = [k, mu_c, mesh.wsum2.reshape(mesh.nk, mesh.nmu).copy()] + pops_s
         per_los.append(item)
+        per_los_ops.append(ops_item)
         if multi:
             save_result(out + "_rsd_los%s.npy" % AXES[ax], item)
+            save_result(out + "_rsd_ops_los%s.npy" % AXES[ax], ops_item)
             log("line of sight %s done -> %s_rsd_los%s.npy" % (AXES[ax], out, AXES[ax]))
         if a.save_fields:
             save_fields(os.path.join(a.save_fields, "shifted_fields_redshift_axisrsd_%d_N_%d_c_0.npy" % (ax, n)),
@@ -867,6 +878,10 @@ def main():
     if per_los:
         res = per_los[0] if len(per_los) == 1 else mean_rsd(per_los)
         save_result(out + "_rsd.npy", res)
+        # operator powers for the LOS mean: averaged too (same modes in every LOS)
+        ops_res = per_los_ops[0] if len(per_los_ops) == 1 else (
+            per_los_ops[0][:3] + [np.mean([it[i] for it in per_los_ops], axis=0) for i in range(3, 7)])
+        save_result(out + "_rsd_ops.npy", ops_res)
         perr_s = res[2]
         log("redshift space done -> %s_rsd.npy%s" % (out, "" if len(per_los) == 1 else
             " (mean over lines of sight %s)" % ", ".join(AXES[ax] for ax in sorted(rsd_axes))))

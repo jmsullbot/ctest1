@@ -426,6 +426,64 @@ or job-submission changes.
     - The LAE β1 still drops with μ at low k (top bin ≈ 0.75 vs 1.0): the
       same f mismatch (slope ≈ f_eff − f).
 
+## Bias parameters from the transfer functions: fit_bias.py (2026-11-23)
+
+- The request: even-in-k polynomial fits to the low-k limits, as in
+  2505.03626, but weighted with the transfer-function covariance of
+  1811.10640, compared with Table III of 2505.03626.
+- 2505.03626 defers the method to 2412.01888, which defers to 2409.10609
+  §4.7.
+  - Real-space templates: β_X = a0 + a1 k² + a2 k⁴ (their eq. 58), k_max 0.4.
+  - Low-k limits with δ_Z kept (their eq. 45; our default real space is the
+    same): b1 = 1 + β1, b2 = 2β2, b_G2 = β_G2 − 2/7 b1 + 1/2, b3 = 6β3.
+  - Without δ_Z (their eq. 20; `--real-no-dz`): b1 = β1, b_G2 = β_G2 − 2/7 b1.
+  - Verified by matching second-order kernels:
+    - δ̃1 → 1 + shift;
+    - δ_Z → 1 + shift + ½F_G2;
+    - Eulerian F2 = 1 + shift + 2/7 F_G2 (G2 basis; 17/21 is the K² basis).
+  - The papers fit β1 with the one-loop shape (their eq. 59), not a
+    polynomial. So b_Γ3, Table III's b_∇²δ, c_μ² and b4 are NOT obtainable
+    from polynomials.
+- 1811.10640 covariance (its eqs. 86–88):
+  - Noise: C_noise = P_err/(N_k P_11), diagonal. Generalized here to
+    P_err/(N_k P_O⊥) per operator, with N_k = all grid modes (both k and
+    −k; `Mesh.wsum1/2`).
+  - Theory error: δβ(k_i)δβ(k_j) exp(−Δk²/2/0.2²), with δβ = b1(D/D0)⁴
+    (k/0.45)^3.3 for β1 (two-loop) and b1(D/D0)²(k/0.3)^1.8 for the others
+    (one-loop). Negligible at z = 3.
+  - Validated on 16 Zel'dovich mock realizations (128³, 338.3 Mpc/h): the
+    scatter / prediction is 0.87–1.15 for every β, in real space and per μ
+    bin. Pulls of the fitted a0 have std 0.82–1.15.
+- perr_from_ic.py now writes `<out>_real_ops.npy` [k, N_k, P_O1..4] and
+  `<out>_rsd_ops.npy` [k, μ, N(k,μ), P_O1..4] (per LOS, plus the mean).
+  - These depend only on the IC, not on the catalog, so one rerun serves
+    every sample (`fit_bias.py --ops PREFIX`).
+  - The user's LAE/LBG files predate them. The first fit used stand-in ops:
+    two 256³ ICs with an Eisenstein–Hu no-wiggle P(k) and σ8 0.81. The
+    user's δ̃1 power is 9–19 % above the stand-in's, so that only changes
+    the errors and weights slightly.
+- Results, real space, k ≤ 0.4, a0 + a2k² + a4k⁴, stand-in ops. The table
+  shows ours vs Table III MTNG / Astrid:
+
+  | sample | b1 | b2 | b_G2 | b3 | α0 |
+  |---|---|---|---|---|---|
+  | ODIN LAE | 2.16 ± 0.03 (2.33 / 2.15) | −0.32 ± 0.19 (0.17 / 1.05) | 0.39 ± 0.27 (−0.80 / −0.98) | −6.5 ± 1.1 (−1.2 / 6.7) | 0.026 (0.046 / 0.074) |
+  | S5 LAE | 2.13 (2.68 / 1.89) | −0.53 (0.61 / −0.05) | 0.42 (−0.84 / −0.52) | −6.2 (−2.7 / −1.05) | 0.029 (0.041 / 0.023) |
+  | CARS LBG | 4.23 (4.24 / 3.96) | 8.33 ± 0.24 (6.21 / 6.02) | −0.66 ± 0.31 (−3.03 / −1.44) | 14.6 ± 1.3 (13.1 / 9.2) | −0.327 (−0.16 / −0.32) |
+  | S5 LBG | 3.87 (3.92 / 4.05) | 6.33 (4.85 / 7.76) | −0.49 (−2.28 / −1.19) | 7.9 (8.75 / 12.5) | −0.344 (−0.17 / −0.307) |
+
+  - Across k_max 0.2–0.5 and orders 2 and 4: b1 moves ±0.07 (more than its
+    formal ±0.03), b2 and b3 move less than their errors for the LBGs, and
+    b_G2 moves ±0.3–0.4.
+  - β1's χ²/dof is ~1.8 (LAE) and ~3 (LBG) for every choice, because the
+    polynomial cannot follow β1; this is why the papers fit the one-loop
+    shape.
+  - Our b_G2 is less negative than Table III everywhere. For the LBGs it is
+    near the local-Lagrangian value −2/7(b1−1) ≈ −0.85. α0 matches Astrid
+    for the LBGs.
+  - α2 and the redshift-space a0's are affected by the factor-2 RSD
+    amplitude, so do not trust them yet.
+
 ## Running lrgs.py (field-level bias) over all HODs
 
 - `lrgs.py` (the user's transfer-function script, lives with their Hi-Fi_mocks
