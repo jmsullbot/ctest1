@@ -33,10 +33,18 @@ Inputs
              --omega-nu 0.0014197 --omega-r 0) gives D(0.5)/D(99) = 59.9116 and
              f = 0.75907; Abacus's own tables give 59.911485 and 0.759070.
   --catalog  .npy galaxy catalog, positions in Mpc/h. Either a structured
-             array with x, y, z and z_rsd, or an (Ngal, 3), (Ngal, 4:
-             x y z z_rsd) or (Ngal, 6: x y z vx vy vz) array.
+             array with x, y, z and z_rsd (or zrsd), or an (Ngal, 3),
+             (Ngal, 4: x y z z_rsd) or (Ngal, 6) array.
+             Six columns are either x y z xrsd yrsd zrsd (positions with RSD
+             along each axis; zrsd is used) or x y z vx vy vz. Which one is
+             detected from the data: columns 4-6 sitting within a few Mpc/h
+             of columns 1-3 are RSD positions. --cols6 rsd|vel overrides.
              A catalog with vz (peculiar velocity in km/s) but no z_rsd gets
              z_rsd = z + vz (1 + z_out) / (100 E(z_out)).
+             The line of sight is z. The shift z_rsd - z is checked and
+             logged: a real RSD shift has no mean and does not follow z, so
+             a wrong column or wrong units trigger a WARNING (repeated at the
+             end of the run).
              Positions in [0, L) are used as they are. Positions centred on 0
              (any coordinate < 0, as in AbacusHOD catalogs) are shifted by
              +L/2, as lrgs.py does. --no-centre-shift forces [0, L).
@@ -381,28 +389,61 @@ def truncate_ic(delta, m):
     return irfftn(G * np.float32((float(m) / n) ** 3), m).astype(np.float32)
 
 
-def load_catalog(path, box, force_corner, vz_to_dist):
-    """Positions wrapped into [0, L): ([x, y, z], z_rsd or None).
+def _wrap(d, box):
+    """Periodic difference in [-L/2, L/2)."""
+    return (d + 0.5 * box) % box - 0.5 * box
+
+
+def cols6_layout(a, box):
+    """('rsd' | 'vel', median offset): columns 4-6 of a 6-column catalog are RSD
+    positions (x y z xrsd yrsd zrsd) if they sit close to columns 1-3, else
+    velocities (x y z vx vy vz)."""
+    med = float(np.median(np.abs(_wrap(np.asarray(a[:, 3:6], np.float64) - a[:, 0:3], box))))
+    if med < min(0.05 * box, 20.0):
+        return "rsd", med
+    if med > box / 8.0:
+        return "vel", med
+    sys.exit("cannot tell whether catalog columns 4-6 are RSD positions (x y z xrsd yrsd zrsd) or velocities "
+             "(x y z vx vy vz): their median distance from columns 1-3 is %.1f Mpc/h. Pass --cols6 rsd or "
+             "--cols6 vel." % med)
+
+
+def load_catalog(path, box, force_corner, vz_to_dist, cols6="auto"):
+    """Positions wrapped into [0, L): ([x, y, z], z_rsd or None, warning or None).
     vz_to_dist [Mpc/h per km/s] makes z_rsd from vz when the catalog has no z_rsd
     (None: not available, so real space only)."""
     c = np.load(path)
-    vz = None
+    vz = zr = None
     if c.dtype.names:
         missing = [k for k in ("x", "y", "z") if k not in c.dtype.names]
         if missing:
             sys.exit("catalog %s has no %s (fields: %s)" % (path, ", ".join(missing), ", ".join(c.dtype.names)))
         cols = [c["x"], c["y"], c["z"]]
-        zr = c["z_rsd"] if "z_rsd" in c.dtype.names else None
+        for name in ("z_rsd", "zrsd"):
+            if name in c.dtype.names:
+                zr = c[name]
+                log("redshift-space z: field '%s'" % name)
+                break
         if zr is None and "vz" in c.dtype.names:
             vz = c["vz"]
     else:
         a = np.asarray(c)
         if a.ndim != 2 or a.shape[1] not in (3, 4, 6):
             sys.exit("catalog must be a structured array (x, y, z and z_rsd or vz) or an (Ngal, 3|4|6) array "
-                     "with columns x y z | x y z z_rsd | x y z vx vy vz; got shape %s" % (a.shape,))
+                     "with columns x y z | x y z z_rsd | x y z xrsd yrsd zrsd or x y z vx vy vz; got shape %s"
+                     % (a.shape,))
         cols = [a[:, 0], a[:, 1], a[:, 2]]
-        zr = a[:, 3] if a.shape[1] == 4 else None
-        vz = a[:, 5] if a.shape[1] == 6 else None
+        if a.shape[1] == 4:
+            zr = a[:, 3]
+        elif a.shape[1] == 6:
+            kind, med = (cols6, None) if cols6 != "auto" else cols6_layout(a, box)
+            how = "--cols6" if med is None else "detected: median |col 4-6 - col 1-3| = %.2f Mpc/h" % med
+            if kind == "rsd":
+                zr = a[:, 5]
+                log("6 columns read as x y z xrsd yrsd zrsd (%s); redshift-space z = zrsd" % how)
+            else:
+                vz = a[:, 5]
+                log("6 columns read as x y z vx vy vz (%s)" % how)
     if len(cols[0]) == 0:
         sys.exit("catalog %s is empty" % path)
     # centred on 0 if any coordinate is clearly negative; x, y, z must then fit
@@ -426,10 +467,26 @@ def load_catalog(path, box, force_corner, vz_to_dist):
         else:
             zr = np.asarray(cols[2], np.float64) + vz_to_dist * np.asarray(vz, np.float64)
             log("z_rsd = z + vz * %.6g Mpc/h per km/s = (1 + z_out) / (100 E(z_out))" % vz_to_dist)
+    # A real RSD shift has (statistically) zero mean and is unrelated to position.
+    # A wrong column or wrong units usually break one of these.
+    warning = None
+    if zr is not None:
+        z64 = np.asarray(cols[2], np.float64)
+        sh = _wrap(np.asarray(zr, np.float64) - z64, box)
+        rms, mean = float(sh.std()), float(sh.mean())
+        corr = float(np.corrcoef(sh, z64)[0, 1]) if rms > 0 else 0.0
+        log("RSD shift z_rsd - z: rms %.3f Mpc/h, mean %+.3f Mpc/h, correlation with z %+.3f" % (rms, mean, corr))
+        if rms < 0.1:
+            warning = "z_rsd - z has rms %.3f Mpc/h: the redshift-space positions carry (almost) no RSD" % rms
+        elif abs(mean) > 0.2 * rms or abs(corr) > 0.2:
+            warning = ("z_rsd - z has mean %+.2f Mpc/h and correlation %+.2f with z (rms %.2f Mpc/h). A real RSD "
+                       "shift has neither: z_rsd is probably built from the wrong column or units" % (mean, corr, rms))
+        if warning:
+            log("WARNING: " + warning)
     s = 0.5 * box if centred else 0.0
     xyz = [np.mod(np.asarray(x, np.float64) + s, box) for x in cols]
     zrs = None if zr is None else np.mod(np.asarray(zr, np.float64) + s, box)
-    return xyz, zrs
+    return xyz, zrs, warning
 
 
 def galaxy_field(x, y, z, mesh):
@@ -604,6 +661,9 @@ def main():
     ap.add_argument("--compensation", choices=["shotnoise", "sinc"], default="shotnoise")
     ap.add_argument("--no-centre-shift", action="store_true",
                     help="positions are in [0, L) (default: detected; centred on 0 if any is < 0)")
+    ap.add_argument("--cols6", choices=["auto", "rsd", "vel"], default="auto",
+                    help="6-column catalogs: rsd = x y z xrsd yrsd zrsd, vel = x y z vx vy vz "
+                         "(default: detected from the data)")
     ap.add_argument("--no-rsd", action="store_true", help="real space only")
     ap.add_argument("--real-no-dz", action="store_true",
                     help="real space without the fixed delta_Z term (lrgs.py-like; beta_1 -> b_1)")
@@ -673,7 +733,7 @@ def main():
     log("IC %s: %d^3, box %g Mpc/h, times D = %.6f, std(delta_1) = %.4f"
         % (a.ic, n, a.box, D, float(delta.std())))
     mesh = Mesh(n, a.box, a.nmu, a.compensation)
-    xyz, zrsd = load_catalog(a.catalog, a.box, a.no_centre_shift, vz_to_dist)
+    xyz, zrsd, rsd_warning = load_catalog(a.catalog, a.box, a.no_centre_shift, vz_to_dist, a.cols6)
     ngal = len(xyz[0])
     nbar = ngal / a.box ** 3
     rsd = (not a.no_rsd) and zrsd is not None
@@ -741,6 +801,8 @@ def main():
         zlab = "" if a.z_out is None else "$z=%g$, " % a.z_out
         make_plots(out, mesh.knyq, a.title or "%s,  %s$N_{\\rm mesh}=%d$, $L=%g\\,h^{-1}$Mpc  (%s)"
                    % (os.path.basename(out), zlab, n, a.box, model))
+    if rsd_warning and rsd:
+        log("WARNING (repeated): %s. Do not trust the redshift-space results." % rsd_warning)
     log("done")
 
 

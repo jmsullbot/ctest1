@@ -313,14 +313,29 @@ or job-submission changes.
     z = 3 (linear σ_v ≈ 180 km/s × 0.0088 Mpc/h per km/s), and the
     perr_from_ic.py log line about vz.
   - Confirm with `--f 0`: the RSD results should then reproduce real space.
-  - 2026-11-23: the user suspects their own RSD conversion factor.
-    - Correct value at z = 3 (default cosmology): Δz = v_z(1+z)/(100 E(z))
-      = 0.00883 Mpc/h per km/s.
-    - The data allow at most ~10–25 % of that shift, so the error is a
-      factor ≥ ~4. Candidates: (1+z) dropped (×1/4) or inverted (×1/16),
-      kpc vs Mpc (×10⁻³), or box units (×1/338).
-    - A Gadget √a velocity convention would make RSD too strong, so it is
-      not the cause.
+  - **RESOLVED 2026-11-23: our bug, not the user's conversion factor.**
+    - The user's catalogs are (N, 6) arrays `x y z xrsd yrsd zrsd`, with RSD
+      along each axis; use `zrsd` for LOS z.
+    - perr_from_ic.py read every 6-column array as `x y z vx vy vz`, so it
+      built z_rsd = z + 0.00883 × zrsd: a 0.9 % stretch along z with
+      mean shift L/2 × 0.00883 = 1.5 Mpc/h.
+    - That gives no Kaiser boost, a large top-μ P_err, and r_cc → 0 near
+      k_z ≈ π/(0.00883 L) ≈ 1 h/Mpc.
+    - Fix: the 6-column layout is detected from the data (median |col 4–6
+      − col 1–3| below min(0.05 L, 20) → RSD positions; above L/8 →
+      velocities; otherwise error), with `--cols6 rsd|vel` to override.
+      Structured arrays may name the field `zrsd`.
+    - New guard: z_rsd − z is logged (rms, mean, correlation with z). A
+      WARNING fires if rms < 0.1 Mpc/h, or if |mean| > 0.2 rms or
+      |corr| > 0.2, and is repeated at the end of the run.
+    - Checked on the LBG-like mock:
+      - The 6-column RSD, 6-column velocity and structured `zrsd` layouts
+        give results bit-identical to the structured `z_rsd` reference.
+      - Forcing the old reading reproduces the user's symptoms: shift mean
+        +1.50, rms 0.86, corr 0.98; top-μ n̄P_err 1.18–1.26 at k < 0.3;
+        top-μ r_cc 0.01 at k 0.7–1. The guard fires.
+    - The user must rerun the four LAE/LBG samples. Their real-space
+      results are unaffected.
 - `plot_fig4.py --run PREFIX LABEL ... --z-out 3 --out X` draws the paper's
   Fig. 4 (one row per run) and Fig. 5 (r_cc), plus `X_rsdcheck.png` with
   both diagnostics. It imports perr_from_ic.py from its own directory.
