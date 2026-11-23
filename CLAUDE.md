@@ -389,6 +389,42 @@ or job-submission changes.
     - `ENV_READY=1` skips activation.
     - Tested with a stand-in conda (a conda.sh function) on a bare PATH, and
       in sbatch-like conditions with no CONDA_EXE.
+  - 2026-11-23: the user reported "your script didn't work" without the
+    error and ran the samples by hand on an interactive node.
+    - A likely cause: inside salloc, SLURM_SUBMIT_DIR is set (to where
+      salloc started), and CODE used it first.
+    - CODE now resolves in this order: the script's own directory (bash,
+      also inside salloc), then SLURM_SUBMIT_DIR (sbatch runs a spooled
+      copy), then $PWD. All three cases were tested.
+    - The real error is still unknown; ask for it if it recurs.
+- All figures (perr_from_ic.py `_transfer`/`_perr`, plot_fig4.py
+  fig4/fig5/rsdcheck) are also written as vector PDF next to the PNG, via
+  `perr_from_ic.save_figure` (user request, 2026-11-23).
+- **Rerun after the column fix (2026-11-23):** the user's files are
+  LAE_ODIN, LAE_S5 (= run1, run1b), LBG_CARS (6.7e-4, = run1ii) and LBG_S5
+  (= run1i). Their real-space files are identical to the earlier runs.
+  - RSD is now present. Top-μ n̄P_err at k 0.3–0.5:
+    - LAE: 1.08–1.09 (was 1.27);
+    - CARS LBG: 0.85 (was 1.47);
+    - S5 LBG: 0.88 (was 1.78).
+  - The LBG redshift-space r_cc tracks real space to k ~ 0.5; β1 is
+    μ-flat at low k for the LBGs; the top-μ P_err rises past 1/n̄ only at
+    k ≳ 0.5. Qualitatively this is like the paper's MTNG Fig. 4.
+  - **But the RSD amplitude is ~half of linear theory.**
+    - The top-μ P(k,μ)/P_real plateaus, flat over k 0.1–0.7, at 1.3–1.4
+      for the LAEs (Kaiser 1.73) and 1.2–1.25 for the LBGs (Kaiser
+      1.35–1.39). FoG would make it fall with k instead.
+    - f_eff = 0.48–0.50 from the ratio for all four samples, and
+      0.45–0.77 from the β1 slope (−0.21 to −0.53).
+    - The same f_eff in LAEs and LBGs points to a common cause, i.e. the
+      conversion, not LAE physics.
+    - A factor of exactly 2 at z = 3 is √a (or 1/√(1+z)). Example: Gadget /
+      AREPO snapshot velocities are u = v_pec/√a, and using v = u·a
+      instead of u·√a gives exactly 0.5; so does √(1+z) in place of (1+z).
+    - Check: the logs' "RSD shift z_rsd - z: rms" should be ~1.5–2.5
+      Mpc/h; ~0.8–1.2 would confirm a factor 2.
+    - The LAE β1 still drops with μ at low k (top bin ≈ 0.75 vs 1.0): the
+      same f mismatch (slope ≈ f_eff − f).
 
 ## Running lrgs.py (field-level bias) over all HODs
 

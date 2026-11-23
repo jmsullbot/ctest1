@@ -63,6 +63,7 @@ Outputs (<out> from --out)
                    beta3, nbar], each (k, mu) quantity an (nk, Nmu) array. With
                    several lines of sight this is their mean (r from the mean
                    powers), and <out>_rsd_los<a>.npy holds each one.
+  Each figure is written as .png and as a vector .pdf with the same name.
   <out>_transfer.png  Fig. 4 of arXiv:2505.03626 style: one row of panels
                   beta_1, beta_2, beta_G2, beta_3, P_err; real space black,
                   mu bins in darkening shades; P_err in h^-3 Mpc^3 with 1/nbar
@@ -572,6 +573,14 @@ def _pyplot():
         return None
 
 
+def save_figure(fig, fn, dpi):
+    """Save the figure as fn (PNG) and as a vector PDF with the same name."""
+    fig.savefig(fn, dpi=dpi)
+    pdf = os.path.splitext(fn)[0] + ".pdf"
+    fig.savefig(pdf)
+    log("wrote %s and %s" % (fn, os.path.basename(pdf)))
+
+
 def load_results(prefix):
     """Arrays for plotting from <prefix>_real.npy (and _rsd.npy if present).
     The RSD betas are used only if they have the (nk, Nmu) shape this script writes."""
@@ -617,9 +626,8 @@ def plot_transfer(fn, R, title):
     axes[0].legend(loc="lower left", fontsize=11)
     fig.suptitle(title, fontsize=16)
     fig.tight_layout()
-    fig.savefig(fn, dpi=150)
+    save_figure(fig, fn, 150)
     plt.close(fig)
-    log("wrote %s" % fn)
 
 
 def plot_perr_panels(fn, R, knyq, title):
@@ -666,9 +674,8 @@ def plot_perr_panels(fn, R, knyq, title):
         pass
     fig.suptitle(title + r"  —  $P_{\rm err}$", fontsize=15)
     fig.tight_layout()
-    fig.savefig(fn, dpi=150)
+    save_figure(fig, fn, 150)
     plt.close(fig)
-    log("wrote %s" % fn)
 
 
 def make_plots(prefix, knyq, title):

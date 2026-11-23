@@ -6,7 +6,7 @@ check that the catalogs' redshift-space positions really carry RSD.
         --run run1i "LBG run1i" --run run1ii "LBG run1ii" --z-out 3 --out lae_lbg
 
 --run PREFIX LABEL (repeatable) reads PREFIX_real.npy and PREFIX_rsd.npy (the
-perr_from_ic.py / lrgs.py layout). Writes
+perr_from_ic.py / lrgs.py layout). Writes, each as .png and vector .pdf,
   <out>_fig4.png      one row per run: beta_1, beta_2, beta_G2, beta_3, P_err.
                       Real space is black, mu bins are darkening shades, and
                       1/nbar is dashed.
@@ -107,9 +107,8 @@ def fig4(plt, runs, fn):
     fig.legend(handles, labels, loc="upper center", ncol=len(labels), fontsize=12, frameon=False,
                title="each column: lighter to darker = increasing $\\mu$ (redshift space); black = real space",
                title_fontsize=11, bbox_to_anchor=(0.5, 1.0))
-    fig.savefig(fn, dpi=130)
+    P.save_figure(fig, fn, 130)
     plt.close(fig)
-    print("wrote", fn)
 
 
 def fig5(plt, runs, fn):
@@ -131,9 +130,8 @@ def fig5(plt, runs, fn):
         ax.legend(loc="lower left", fontsize=9, frameon=False)
         ax.grid(alpha=0.25, which="both")
     fig.tight_layout()
-    fig.savefig(fn, dpi=130)
+    P.save_figure(fig, fn, 130)
     plt.close(fig)
-    print("wrote", fn)
 
 
 def rsdcheck(plt, runs, fn, f, kcut, beta1_is_b1):
@@ -217,9 +215,8 @@ def rsdcheck(plt, runs, fn, f, kcut, beta1_is_b1):
     ax.legend(loc="lower left", fontsize=8.5, frameon=False)
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    fig.savefig(fn, dpi=130)
+    P.save_figure(fig, fn, 130)
     plt.close(fig)
-    print("wrote", fn)
 
 
 def main():

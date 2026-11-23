@@ -27,9 +27,17 @@ CATALOGS=(                         # "label  catalog.npy"
     "LBG_run1ii  /path/to/catalog_4.npy"
 )
 
-CODE="${CODE:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}}"
+# Where perr_from_ic.py and plot_fig4.py are: next to this script (bash, also inside
+# salloc), else the submit directory (sbatch runs a spooled copy), else here.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z ${CODE:-} ]]; then
+    for d in "$here" "${SLURM_SUBMIT_DIR:-}" "$PWD"; do
+        [[ -n $d && -f $d/perr_from_ic.py && -f $d/plot_fig4.py ]] && { CODE="$d"; break; }
+    done
+fi
+[[ -n ${CODE:-} && -f $CODE/perr_from_ic.py && -f $CODE/plot_fig4.py ]] || {
+    echo "cannot find perr_from_ic.py and plot_fig4.py (looked in $here ${SLURM_SUBMIT_DIR:-} $PWD); set CODE=/their/dir"; exit 1; }
 WORKERS="${WORKERS:-$([[ -n ${SLURM_JOB_ID:-} ]] && echo 32 || echo 8)}"   # FFT threads
-[[ -f $CODE/perr_from_ic.py && -f $CODE/plot_fig4.py ]] || { echo "no perr_from_ic.py / plot_fig4.py in $CODE (set CODE=)"; exit 1; }
 
 # conda: your own install, never a module. A batch job inherits PATH but not the
 # `conda` shell function, so source conda.sh and activate here.
@@ -66,4 +74,4 @@ python "$CODE/plot_fig4.py" "${runs[@]}" --z-out "$ZOUT" --out "$OUTDIR/samples"
 echo; echo "=== catalog layout and RSD shifts (expect rms ~1.5-2.5 Mpc/h, mean and correlation ~0)"
 grep -H -E "columns read|field '|RSD shift" "$OUTDIR"/*.log || true
 grep -H "WARNING" "$OUTDIR"/*.log || echo "no warnings"
-echo "figures: $OUTDIR/samples_fig4.png  $OUTDIR/samples_fig5.png  $OUTDIR/samples_rsdcheck.png"
+echo "figures (.png and .pdf): $OUTDIR/samples_fig4  $OUTDIR/samples_fig5  $OUTDIR/samples_rsdcheck"
