@@ -157,8 +157,12 @@ or job-submission changes.
   separate IC tree.**
   - The user found it with `ls <root> | grep -i ic`; there is no per-box
     `<sim>/ic/`, which is all the earlier note checked.
-  - The exact layout is not yet recorded here; ask for the
-    `find <icdir> -maxdepth 3 -name ic_dens_N576.asdf` output.
+  - Layout: `<root>/ic/<sim>/ic_dens_N576.asdf`, e.g.
+    `/global/cfs/cdirs/desi/public/cosmosim/AbacusSummit/ic/AbacusSummit_base_c000_ph000/`.
+    The hugebase boxes are there too.
+  - Name patterns must include the leading underscore or slash
+    (`*/AbacusSummit_base_c000_ph*`): `*base_c000_ph0*` also matches
+    `hugebase_c000`, which bit us once.
   - So Globus is NOT needed for the multi-phase run. Symlink each phase's
     file into `$PSCRATCH/AbacusSummit/<sim>/ic/ic_dens_N576.asdf`, which is
     what run_phases_perr.sh and check_phases.sh expect.
