@@ -567,6 +567,19 @@ or job-submission changes.
 - Not runnable in the sandbox: real AbacusHOD/prepare_sim, real Globus, and
   Blosc-compressed asdf (no abacusutils). The bash flows were tested with
   stubs and fake trees.
+- Where things are on Perlmutter (2026-11-24):
+  - The base-box repo the jobs run from is
+    `/pscratch/sd/j/jsull/qso_sbp/old_lrgs/ctest1`. The small-box copy is
+    `.../old_lrgs/new_small_files/ctest1`.
+  - The phases zip is unpacked at `/pscratch/sd/j/jsull/qso_sbp/abacus_phases`
+    (`repo/`, `patches/`), not the README's `$PSCRATCH/tmp_abacus_phases`.
+  - The first array submission failed in every task with `unrecognized
+    arguments: --sim_name`. The new sbatch was in the repo, but
+    generate_lrg_hods.py was still the Sep 21 version.
+    - Fix: `patch -p1 < <zip>/patches/generate_lrg_hods.diff` from the repo
+      root. It was tested on the Sep 21 file, with and without a hand edit.
+    - Nothing is written before that failure except empty `phNNN/` dirs.
+    - A job log's `Repo dir` line shows which checkout the job used.
 
 ## Running lrgs.py (field-level bias) over all HODs
 
