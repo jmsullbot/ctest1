@@ -574,8 +574,11 @@ or job-submission changes.
   - The phases zip is unpacked at `/pscratch/sd/j/jsull/qso_sbp/abacus_phases`
     (`repo/`, `patches/`), not the README's `$PSCRATCH/tmp_abacus_phases`.
   - The first array submission failed in every task with `unrecognized
-    arguments: --sim_name`. The new sbatch was in the repo, but
-    generate_lrg_hods.py was still the Sep 21 version.
+    arguments: --sim_name`. Only the zip's three slurm/ files had been
+    copied in; generate_lrg_hods.py was still the Sep 21 version.
+  - Before that, this repo had no perr_from_ic.py or fit_bias.py, so the
+    LAE/LBG runs used copies in some other directory. A perr_from_ic.py fix
+    has to reach both copies.
     - Fix: `patch -p1 < <zip>/patches/generate_lrg_hods.diff` from the repo
       root. It was tested on the Sep 21 file, with and without a hand edit.
     - Nothing is written before that failure except empty `phNNN/` dirs.
