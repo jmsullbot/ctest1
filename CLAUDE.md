@@ -595,6 +595,13 @@ or job-submission changes.
       the original config alone. Without `--sim_name` nothing changes.
     - So the phase HDF5 shards lack box_size, n_cent and f_sat, like ph000's.
       Use compute_fsat.py; readers fall back to box 2000.
+    - Applied on Perlmutter (none of the user's lines changed). The
+      `_config_for_sim` check passed in their abacus env, and the array was
+      resubmitted as `--array=1-24`, with ph000's catalog copied from
+      `$PSCRATCH/lrg_hods/catalogs/`.
+  - The base catalogs are structured `x y z z_rsd vx vy vz mass id`, centred
+    on 0. `--los all` uses the stored `z_rsd` for z, as lrgs.py does, and
+    `x + vx·(1+z)/(100E)` (0.011343 Mpc/h per km/s at z 0.5) for x and y.
 
 ## Running lrgs.py (field-level bias) over all HODs
 
