@@ -573,16 +573,28 @@ or job-submission changes.
     `.../old_lrgs/new_small_files/ctest1`.
   - The phases zip is unpacked at `/pscratch/sd/j/jsull/qso_sbp/abacus_phases`
     (`repo/`, `patches/`), not the README's `$PSCRATCH/tmp_abacus_phases`.
-  - The first array submission failed in every task with `unrecognized
-    arguments: --sim_name`. Only the zip's three slurm/ files had been
-    copied in; generate_lrg_hods.py was still the Sep 21 version.
-  - Before that, this repo had no perr_from_ic.py or fit_bias.py, so the
+  - Until 2026-11-24 this repo had no perr_from_ic.py or fit_bias.py, so the
     LAE/LBG runs used copies in some other directory. A perr_from_ic.py fix
     has to reach both copies.
-    - Fix: `patch -p1 < <zip>/patches/generate_lrg_hods.diff` from the repo
-      root. It was tested on the Sep 21 file, with and without a hand edit.
+  - The first array submission failed in every task with `unrecognized
+    arguments: --sim_name`. Only the zip's three slurm/ files had been
+    copied in.
     - Nothing is written before that failure except empty `phNNN/` dirs.
     - A job log's `Repo dir` line shows which checkout the job used.
+  - **This repo's generate_lrg_hods.py predates Sep 11 and has unknown hand
+    edits** (most likely the August version the first base run used). The
+    zip's patch is against Sep 21 and fails on every version before a08bc96.
+    - ph000's catalog came from that code, so the file is kept. Only a
+      minimal `--sim_name` patch goes in: the argument, `_config_for_sim` and
+      the two-line hook in main, copied verbatim from HEAD and diffed against
+      c348f5c.
+    - That patch applies to c348f5c, 7ad79db and fd29f8b. It also applies
+      with edits next to the hunk (fuzz) and with trailing whitespace lost in
+      copy-paste.
+    - With the job's exact arguments it writes `config_<sim>.yaml` and leaves
+      the original config alone. Without `--sim_name` nothing changes.
+    - So the phase HDF5 shards lack box_size, n_cent and f_sat, like ph000's.
+      Use compute_fsat.py; readers fall back to box 2000.
 
 ## Running lrgs.py (field-level bias) over all HODs
 
