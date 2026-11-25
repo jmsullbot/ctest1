@@ -551,14 +551,25 @@ or job-submission changes.
     `_rsd_losz.npy` when it exists, and shifts our real-space β1 / β_G2 by
     +1 / +½ unless `--real-no-dz`.
   - On 16 mock realizations the ratios are 0.75–1.02.
-- **Decision:** the field-level step uses perr_from_ic.py, not
-  my_generate_shifted_fields.py + lrgs.py, which needed ~3 h and 306 GiB per
-  box at 512.
-  - **Pending:** validate it against the existing lrgs.py ph000 row-1003
-    results at Nmesh 512 (`phase_ensemble.py --phases 0 --lrgs ...`). That
-    is also the long-open perr_from_ic-vs-lrgs check.
-  - For an exact real-space match, run ph000 once with
-    `EXTRA=--real-no-dz LOS=z`.
+- **Reversed by the user (2026-11-25): for the Abacus phases the field-level
+  step is THEIR pipeline, my_generate_shifted_fields.py then lrgs.py, exactly
+  as for ph000.** perr_from_ic.py and its runners belong to the TNG-like
+  338.3 Mpc/h sim.
+  - This session had mixed the two workflows, and the user had to point it
+    out. Don't propose perr_from_ic.py, run_phases_perr.sh or
+    phase_ensemble.py for the Abacus phases unless asked.
+  - The HOD-array catalogs (`$PSCRATCH/lrg_hods_phases/phNNN/catalogs/`) and
+    the IC links (`$PSCRATCH/AbacusSummit/<sim>/ic/`) serve that pipeline
+    unchanged.
+  - Cost per phase at Nmesh 512: the generator took 169 min and 306 GiB on a
+    CPU node (job 60856968). So 24 phases cost ≈ 70 node-hours and
+    24 × 5.4 GB of fields (real 2.15 + RSD axis 2 3.22 GB). lrgs.py on one
+    catalog takes minutes (72 s real at 512; RSD unmeasured).
+  - Both scripts hardcode the IC path, output folder, `pathD`, Nmesh and the
+    `ph=000` tag. Generalizing them needs the user's current copies (asked
+    for on 2026-11-25; neither full script is on hand here).
+  - Superseded plan: perr_from_ic.py per phase, validated against lrgs.py's
+    ph000 row-1003 results at 512.
 - Unknown and to be flagged: the subsample size per base box (`du -sh` of
   ph000's) × 25 against the 20 TB quota, on top of the ~8 TB of 10500-row
   catalogs. ICs are 25 × ~0.8 GB.
