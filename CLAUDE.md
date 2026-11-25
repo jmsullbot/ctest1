@@ -565,9 +565,37 @@ or job-submission changes.
     CPU node (job 60856968). So 24 phases cost ≈ 70 node-hours and
     24 × 5.4 GB of fields (real 2.15 + RSD axis 2 3.22 GB). lrgs.py on one
     catalog takes minutes (72 s real at 512; RSD unmeasured).
-  - Both scripts hardcode the IC path, output folder, `pathD`, Nmesh and the
-    `ph=000` tag. Generalizing them needs the user's current copies (asked
-    for on 2026-11-25; neither full script is on hand here).
+  - Both scripts hardcoded the IC path, output folder, `pathD` and the
+    `ph=000` tag. The user's current copies arrived on 2026-11-25. They import
+    `lib.tng_lib` from an absolute Hi-Fi_mocks path, so they run from any
+    directory.
+    - The generator reads `$PSCRATCH/abacus_ics_000/ic_dens_N576.asdf`, uses a
+      hardcoded c000 prefactor 59.911485 and f 0.759070, and loops RSD over
+      `range(3)`. So job 60856968's 169 min covered real space plus all three
+      axes.
+    - lrgs.py takes `--batch_size/--batch_num` and reads RSD axis 2 only. The
+      uploaded copy does NOT have lrgs_hoist.diff applied.
+  - `patches/my_generate_shifted_fields_phases.diff` adds `--ic`, `--out` and
+    `--axes`. `--ic` without `--out` refuses to run, so it can never overwrite
+    the ph000 fields.
+  - `patches/lrgs_phases.diff` adds `--ph`, `--path` and `--pathD` (all three
+    or none), and puts `ph=%03d` in both result names.
+  - Without the new options both patched scripts write byte-identical files to
+    the originals. This was checked with stand-in nbodykit, tng_lib and asdf
+    modules on 8³ grids (scratch harness, not in the repo).
+  - `slurm/perlmutter_phases_lrgs_array.sbatch` (array 1–24, 3 h, whole CPU
+    node, nbodykit_env_25), per phase:
+    - the generator with `--axes 2` into `phNNN/shifted_fields/`, skipped
+      when the files exist at full size; it logs [mem] lines;
+    - then lrgs.py per row into `phNNN/results/`.
+    - It refuses an unpatched generator, an Nmesh mismatch, AXES without 2
+      and missing IC/catalog. ph000 exits at once (ALLOW_PH000=1 overrides).
+    - `DELETE_FIELDS=1` and `FORCE_FIELDS=1` exist.
+    - Every path was tested on a fake tree with the stand-ins.
+  - Estimated cost with axis 2 only: ~1–1.5 h per phase, ~35 node-hours in
+    all. Not measured yet.
+  - check_phases.sh now shows `fields` and `lrgs` columns (ph000 via
+    `PH000_DIR` = Heavy_files_Andrej/AbacusBase) instead of `perr`.
   - Superseded plan: perr_from_ic.py per phase, validated against lrgs.py's
     ph000 row-1003 results at 512.
 - Unknown and to be flagged: the subsample size per base box (`du -sh` of

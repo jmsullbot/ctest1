@@ -1,0 +1,52 @@
+--- a/my_generate_shifted_fields.py
++++ b/my_generate_shifted_fields.py
+@@ -22,6 +22,19 @@
+ print('comm', comm, 'comm.rank', comm.rank, 'comm.size', comm.size)
+ rank = comm.rank
+ 
++# Per-phase runs (ctest1 slurm/perlmutter_phases_lrgs_array.sbatch) pass --ic,
++# --out and --axes. Without them nothing below changes: the ph000 run.
++import os
++parser = ArgumentParser()
++parser.add_argument('--ic', default=None,
++                    help='IC density file, e.g. .../AbacusSummit_base_c000_ph007/ic/ic_dens_N576.asdf')
++parser.add_argument('--out', default=None, help='folder for the shifted fields (required with --ic)')
++parser.add_argument('--axes', type=int, nargs='+', choices=[0, 1, 2], default=[0, 1, 2],
++                    help='redshift-space axes to generate (lrgs.py reads axis 2 only)')
++args = parser.parse_args()
++if args.ic is not None and args.out is None:
++    raise SystemExit('--ic needs --out: otherwise this phase would overwrite the ph000 fields')
++
+ SMALL = False
+ 
+ #Nmesh = 512
+@@ -35,6 +48,8 @@
+     output_folder ='/pscratch/sd/j/jsull/qso_sbp/Heavy_files_Andrej/AbacusSmall/shifted_fields/'
+ else:
+     output_folder ='/pscratch/sd/j/jsull/qso_sbp/Heavy_files_Andrej/AbacusBase/shifted_fields/'
++if args.out is not None:
++    output_folder = os.path.join(args.out, '')
+ if not os.path.exists(output_folder):
+     os.makedirs(output_folder)
+ 
+@@ -67,6 +82,11 @@
+ else:
+     path = '/pscratch/sd/j/jsull/abacus_ics_000/ic_dens_N576.asdf'
+ 
++if args.ic is not None:
++    path = args.ic
++print('IC file: %s' % path)
++print('output folder: %s' % output_folder)
++print('redshift-space axes: %s' % args.axes)
+ file = asdf.open(path)
+ dlin = file.tree['data']['density']
+ dlin = ArrayMesh(dlin, BoxSize).paint(mode='real', Nmesh=Nmesh).r2c()
+@@ -96,7 +116,7 @@
+ print("Generating shifted fields in redshift space at output redshift z=%.1f, in a BoxSize L=%.1f on a Nmesh=%i^3 grid, using Abacus %i cosmo..."%(zout, BoxSize, Nmesh, c_ind))
+ del d1, d2, dG2, d3
+ 
+-for axis_rsd in range(3):
++for axis_rsd in args.axes:
+     
+     # Compute shifted fields
+     print('Computing shifted fields... ')

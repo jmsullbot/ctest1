@@ -512,28 +512,36 @@ N_small = N_base / 4 (576³ ↔ 144³, 1152³ ↔ 288³, 1024³ ↔ 256³).
 ### All 25 base phases for one HOD row (ph000–ph024)
 
 The same pipeline as for `AbacusSummit_base_c000_ph000`, repeated on every c000
-phase box for one table row (default **1003**), with the field-level step done
-by `perr_from_ic.py` instead of `my_generate_shifted_fields.py` + `lrgs.py`
-(minutes per box instead of ~3 h and 300 GiB at Nmesh 512).
+phase box for one table row (default **1003**) at Nmesh 512: the HOD catalog,
+then your `my_generate_shifted_fields.py` and `lrgs.py`.
 
 ```bash
-bash slurm/check_phases.sh                       # 1. which boxes are on disk (halos, cleaning)
-PHASES=0-24 bash slurm/globus_fetch_ic.sh        # 2. the 25 ic_dens_N576.asdf (~0.8 GB each), one transfer
-sbatch slurm/perlmutter_phases_hod_array.sbatch  # 3. prepare_sim + row 1003, one array task per phase
-sbatch run_phases_perr.sh                        # 4. perr_from_ic.py per phase (Nmesh 512, LOS x,y,z) + ensemble
-bash slurm/check_phases.sh                       #    progress: subs / IC / cat / perr columns
+bash slurm/check_phases.sh                       # 1. status: halos, cleaning, subs, IC, cat, fields, lrgs
+sbatch slurm/perlmutter_phases_hod_array.sbatch  # 2. prepare_sim + row 1003, one array task per phase
+cd <folder with my_generate_shifted_fields.py and lrgs.py, both patched>
+sbatch <repo>/slurm/perlmutter_phases_lrgs_array.sbatch   # 3. shifted fields + lrgs.py, ph001-ph024
 ```
 
-- Step 3 skips `prepare_sim` for boxes whose subsamples exist (ph000), takes
+- ICs: the public `<AbacusSummit root>/ic/<sim>/ic_dens_N576.asdf`, symlinked
+  into `$PSCRATCH/AbacusSummit/<sim>/ic/`. `slurm/globus_fetch_ic.sh` is only
+  needed for a box whose IC is not on disk.
+- Step 2 skips `prepare_sim` for boxes whose subsamples exist (ph000), takes
   `ROWS="1003 2155"` for more rows, and `CLEAN_SUBSAMPLES=1` frees the
-  subsamples it created once the rows are written. Check
-  `du -sh <subsample_dir>/AbacusSummit_base_c000_ph000` first: ×25 of that
-  must fit in scratch.
-- Outputs: `$PSCRATCH/lrg_hods_phases/phNNN/{catalogs,perr}/`, and the
-  ensemble `ensemble_hod1003_N512_{mean_real,mean_rsd}.npy` (results
-  layout), `_bias.txt/.csv` (per-phase bias from `fit_bias.py` with the
-  1811.10640 covariance, scatter vs quoted errors), `_transfer` and `_bias`
-  figures (PNG + PDF).
-- Cross-check against `lrgs.py` on ph000 (it already has row 1003 at
-  Nmesh 512):
-  `python phase_ensemble.py --root $PSCRATCH/lrg_hods_phases --row 1003 --nmesh 512 --phases 0 --lrgs <results_AbacusBase_..._hod=1003_..._Nmesh_512.npy> <results_RSD_..._Nmesh_512_axisrsd_2.npy> --out ph000_vs_lrgs`
+  subsamples it created once the rows are written. Catalogs land in
+  `$PSCRATCH/lrg_hods_phases/phNNN/catalogs/001003.npy`; copy ph000's from
+  `$PSCRATCH/lrg_hods/catalogs/`.
+- Step 3 needs the two patches in `patches/`: `--ic/--out/--axes` for
+  `my_generate_shifted_fields.py` and `--ph/--path/--pathD` for `lrgs.py`.
+  Without those options both scripts behave exactly as before (checked: same
+  files, byte for byte, on stand-in inputs).
+  - Per phase, on a whole CPU node: the fields (real space + RSD axis 2, the
+    only axis `lrgs.py` reads; ph000's run with all three axes took 169 min
+    and peaked at 306 GiB), then `lrgs.py` on the row.
+  - Outputs: `phNNN/shifted_fields/` (5.4 GB) and
+    `phNNN/results/results{,_RSD}_AbacusBase_c=0_ph=NNN_hod=1003_z=0.5000_Nmesh_512*.npy`.
+    ph000's are already in `Heavy_files_Andrej/AbacusBase/`.
+  - `DELETE_FIELDS=1` drops a phase's fields once its results exist;
+    resubmitting redoes nothing that is finished.
+- An independent alternative for the field-level step is `perr_from_ic.py`
+  (`sbatch run_phases_perr.sh`, minutes per box, ensemble in
+  `phase_ensemble.py`).

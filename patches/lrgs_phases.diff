@@ -1,0 +1,49 @@
+--- a/lrgs.py
++++ b/lrgs.py
+@@ -23,6 +23,11 @@
+ parser = ArgumentParser()
+ parser.add_argument('--batch_size', type=int, required=True)
+ parser.add_argument('--batch_num', type=int, required=True)
++# Per-phase runs (ctest1 slurm/perlmutter_phases_lrgs_array.sbatch) give all
++# three; without them this is the ph000 run, unchanged.
++parser.add_argument('--ph', default=None, help='phase number for the result names, e.g. 7 -> ph=007')
++parser.add_argument('--path', default=None, help='folder holding shifted_fields/; results/ is written there')
++parser.add_argument('--pathD', default=None, help='folder with the <row>.npy catalogs')
+ args = parser.parse_args()
+ 
+ batch_size = args.batch_size
+@@ -34,6 +39,16 @@
+ zout = 0.5
+ path = '/pscratch/sd/j/jsull/qso_sbp/Heavy_files_Andrej/AbacusBase/'
+ pathD = '/pscratch/sd/j/jsull/lrg_hods/catalogs/'
++import os
++phase_tag = '000'
++given = [x is not None for x in (args.ph, args.path, args.pathD)]
++if any(given):
++    if not all(given):
++        raise SystemExit('give --ph, --path and --pathD together (or none of them, for ph000)')
++    phase_tag = '%03d' % int(args.ph)
++    path = os.path.join(args.path, '')
++    pathD = os.path.join(args.pathD, '')
++print('ph=%s  fields: %sshifted_fields/  catalogs: %s  results: %sresults/' % (phase_tag, path, pathD, path))
+ 
+ 
+ output_folder = path + 'results/'
+@@ -63,7 +78,7 @@
+ if real_loop:
+     for i in range(start, end):
+         
+-        path_to_save = output_folder + "results_AbacusBase_c=%i_ph=000_hod=%i_z=%.4f_Nmesh_%i.npy"%(c_ind, i, zout, Nmesh)
++        path_to_save = output_folder + "results_AbacusBase_c=%i_ph=%s_hod=%i_z=%.4f_Nmesh_%i.npy"%(c_ind, phase_tag, i, zout, Nmesh)
+         
+         if not os.path.exists(path_to_save):
+ 
+@@ -158,7 +173,7 @@
+ 
+ for i in range(start, end):
+ 
+-    path_to_save = output_folder + "results_RSD_AbacusBase_c=%i_ph=000_hod=%i_z=%.4f_Nmesh_%i_axisrsd_%i.npy"%(c_ind, i, zout, Nmesh, axis_rsd)
++    path_to_save = output_folder + "results_RSD_AbacusBase_c=%i_ph=%s_hod=%i_z=%.4f_Nmesh_%i_axisrsd_%i.npy"%(c_ind, phase_tag, i, zout, Nmesh, axis_rsd)
+     if not os.path.exists(path_to_save):
+ 
+         # load delta_g
