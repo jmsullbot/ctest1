@@ -609,6 +609,50 @@ or job-submission changes.
       bins treated as independent).
     - Tested on 25 synthetic phases in the exact layout. χ²/dof ≈ 0.9 at
       k_max ≤ 0.3 shows the errors are right.
+  - **Results, row 1003, 25 phases at Nmesh 512 (2026-11-27)**, uploaded as
+    `lrgs_hod1003_N512_25phases.tar.gz`. The pickles only reference
+    numpy.ndarray/dtype/_reconstruct (checked before loading).
+    - **Single-bin spikes at k = 34, 68, 102, 136 k_f (k_f = 2π/2000)**, in
+      real space and the μ ∈ [0, 1/3] bin only. Excess n̄P_err = +1.02, +0.19,
+      +0.05, +0.014 in real space (μ1: +3.0, +0.57, +0.15, +0.04).
+      - The galaxy auto power has the same excess; the model power has none.
+      - It is identical in all 25 phases (n̄P_gal at 34 k_f = 2.33–2.46, against
+        ~1.3 around it).
+      - So it is a pattern in the catalogs with period L/34 = 58.8 Mpc/h along
+        an axis ⊥ LOS. L/34 matches the 34 superslab files of a base box.
+      - It equals A1 ≈ 0.19 along one axis (0.13 each if along two). The 34 k_f
+        shell holds 14754 modes, and N_gal = 870k.
+    - Row 1003 has **Bcent = 0.988 (99th percentile of the table)** and σ =
+      0.017 (near-step centrals). The suspect is the environment AbacusHOD's
+      assembly bias uses, near superslab boundaries. Unproven.
+      - Tests: `slab_profile.py CATALOG...` gives the folded density and
+        first-harmonic amplitude A1 along x, y and z, for all galaxies,
+        centrals and satellites.
+      - `spike_scan.py RESULTS_DIR --ph 0 --nmesh 512` gives the 34/68 k_f
+        excess for every row, against Acent/Asat/Bcent/Bsat (Spearman).
+      - Both were tested on synthetic inputs: planted A1 = 0.20 (centrals, x)
+        was recovered, and so was a Bcent² scaling (ρ = 0.996 with |Bcent|).
+      - User runs pending.
+    - phase_perr.py now finds such bins itself (> 8σ of the mean and > 3 %
+      above the median of ±4 neighbours). It leaves them out of every fit,
+      mean and window, marks them ▼, and adds a `_spikes` figure (`--mask
+      none` keeps them).
+      - Without masking, the μ1 window mean at k 0.1–0.2 read 0.836 instead of
+        0.741.
+    - After masking:
+      - the window means rise monotonically with μ;
+      - nbar scatter is 0.07 %;
+      - per phase D = 0.2783 ± 0.0007 and ℓ_F = 4.90 ± 0.02, with R → 0 in
+        every phase;
+      - [0.3, 0.4) real/μ1/μ2/μ3 = 0.714/0.755/0.864/0.959 (scatter 0.001);
+      - ph000 is typical (+0.8σ real).
+    - The fit to the mean has χ²/dof = 31572/492. The model is inadequate at
+      25-box precision.
+      - Real-space n̄P_err FALLS from 0.799 ± 0.002 (k 0.02–0.05) to 0.709
+        (0.2–0.3), then rises to 0.784 (0.6–0.8, the 512 grid).
+      - 1 − D·W(kR) can only rise with k, hence R → 0.
+      - An EFT-style 1 + α0 + α1 k² fit (α1 < 0 at low k) would follow it.
+        Offered, not done.
   - Superseded plan: perr_from_ic.py per phase, validated against lrgs.py's
     ph000 row-1003 results at 512.
 - Unknown and to be flagged: the subsample size per base box (`du -sh` of

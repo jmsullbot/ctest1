@@ -547,6 +547,12 @@ sbatch <repo>/slurm/perlmutter_phases_lrgs_array.sbatch   # 3. shifted fields + 
   `python phase_perr.py $PSCRATCH/lrg_hods_phases $PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusBase/results --row 1003 --nmesh 512`
   writes `perr_hod1003_N512_{mean,bins,phases,fits}.png/.pdf` and `_summary.txt`
   (per-phase fits, window means, the fit to the mean with σ/√N errors).
+  Single-bin spikes (e.g. at k = 34 n · 2π/L in row 1003) are found, left out
+  of the fits and shown in `_spikes`.
+- `slab_profile.py CATALOG...` folds the galaxy density with period L/34 along
+  x, y, z (all, centrals, satellites) and prints the first-harmonic amplitude;
+  `spike_scan.py RESULTS_DIR --ph 0 --nmesh 512` measures the 34/68 k_f excess
+  of every row against its assembly-bias parameters.
 - An independent alternative for the field-level step is `perr_from_ic.py`
   (`sbatch run_phases_perr.sh`, minutes per box, ensemble in
   `phase_ensemble.py`).
