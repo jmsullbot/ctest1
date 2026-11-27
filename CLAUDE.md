@@ -596,6 +596,19 @@ or job-submission changes.
     all. Not measured yet.
   - check_phases.sh now shows `fields` and `lrgs` columns (ph000 via
     `PH000_DIR` = Heavy_files_Andrej/AbacusBase) instead of `perr`.
+  - `phase_perr.py DIRS|FILES --row 1003 --nmesh 512` (2026-11-27) plots the
+    lrgs.py results over the phases with fit_perr.py's model. It writes
+    `_mean` (ph000 alone | mean ± scatter), `_bins`, `_phases` (grid) and
+    `_fits` (per-phase D, ℓ_F, R and window means) as PNG + PDF, plus
+    `_summary.txt`.
+    - It finds files recursively by name, accepting names with or without
+      `=` and with an upload prefix. It pairs real and RSD per phase and
+      skips other rows, other Nmesh and unpaired files.
+    - Per-phase fits use fit_perr.fit (σ ∝ 1/k). The fit to the mean uses
+      σ/√N per bin with absolute_sigma, so its χ² is meaningful (real and RSD
+      bins treated as independent).
+    - Tested on 25 synthetic phases in the exact layout. χ²/dof ≈ 0.9 at
+      k_max ≤ 0.3 shows the errors are right.
   - Superseded plan: perr_from_ic.py per phase, validated against lrgs.py's
     ph000 row-1003 results at 512.
 - Unknown and to be flagged: the subsample size per base box (`du -sh` of

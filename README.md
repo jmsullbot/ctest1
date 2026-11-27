@@ -542,6 +542,11 @@ sbatch <repo>/slurm/perlmutter_phases_lrgs_array.sbatch   # 3. shifted fields + 
     ph000's are already in `Heavy_files_Andrej/AbacusBase/`.
   - `DELETE_FIELDS=1` drops a phase's fields once its results exist;
     resubmitting redoes nothing that is finished.
+- Plots of n̄P_err over the phases (the compare_perr.py quantities and fit,
+  with the phase scatter):
+  `python phase_perr.py $PSCRATCH/lrg_hods_phases $PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusBase/results --row 1003 --nmesh 512`
+  writes `perr_hod1003_N512_{mean,bins,phases,fits}.png/.pdf` and `_summary.txt`
+  (per-phase fits, window means, the fit to the mean with σ/√N errors).
 - An independent alternative for the field-level step is `perr_from_ic.py`
   (`sbatch run_phases_perr.sh`, minutes per box, ensemble in
   `phase_ensemble.py`).
