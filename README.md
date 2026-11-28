@@ -536,8 +536,18 @@ sbatch <repo>/slurm/perlmutter_phases_lrgs_array.sbatch   # 3. shifted fields (r
 - ICs: the public `<AbacusSummit root>/ic/<sim>/ic_dens_N576.asdf`, symlinked
   into `$PSCRATCH/AbacusSummit/<sim>/ic/`. `slurm/globus_fetch_ic.sh` is only
   needed for a box whose IC is not on disk.
+- Step 0 keeps the env self-contained. A conda env searches
+  `~/.local/lib/python3.11/site-packages` *before* its own packages, so a stale
+  package there shadows the env: an old `coverage` (< 7.4) makes numba fail with
+  `module 'coverage.types' has no attribute 'Tracer'`. The script therefore
+  installs an activation hook that sets `PYTHONNOUSERSITE=1`, runs pip with
+  `~/.local` hidden, and lists every package loaded from outside the env.
+  It is safe to re-run on an existing env. `CLEAR_PYTHONPATH=1` makes the hook
+  unset `PYTHONPATH` too, if the check reports packages coming from there.
 - Step 2 activates `HOD_ENV` (default `abacus_envfix`) whatever
-  `slurm/env.local.sh` names, and stops if that abacusutils lacks the fix. The
+  `slurm/env.local.sh` names. Before anything runs it imports what the
+  generation step imports and stops if that fails (exit 6) or if that
+  abacusutils lacks the fix (exit 5). The
   fixed `prepare_sim` writes one extra `env_xcom_<i>_abacushod_localenv_new.h5`
   per slab; the step is skipped only when halo, particle and environment files
   are there for every slab. It takes `ROWS="1003 2155"` for more rows, and

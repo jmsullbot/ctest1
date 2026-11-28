@@ -40,6 +40,7 @@
 #                    written (frees scratch; more rows later need prepare_sim again)
 #   PROGRESS_SEC     seconds between "[prepare_sim ...] n of N slabs written" lines (default 300)
 #   ALLOW_UNFIXED=1  run with an abacusutils that lacks the fix (not recommended)
+#   KEEP_USER_SITE=1 do not hide ~/.local site-packages from the HOD env
 #SBATCH -J lrg_phases
 # Uncomment and set if you have more than one NERSC allocation; with a
 # single default allocation SLURM picks it automatically.
@@ -83,16 +84,31 @@ if [[ "${CONDA_DEFAULT_ENV:-}" != "$HOD_ENV" && "${CONDA_PREFIX:-}" != "$HOD_ENV
     set -u
     echo "HOD env    : $HOD_ENV  ($(command -v python))"
 fi
+# A conda env puts ~/.local site-packages BEFORE its own, so a stale package there
+# shadows the env's (an old coverage breaks numba at import). Keep them out;
+# setup_env_envfix.sh also does this on activation. KEEP_USER_SITE=1 turns it off.
+if [[ "${KEEP_USER_SITE:-0}" != 1 ]]; then export PYTHONNOUSERSITE=1; fi
+# Check the env now, with everything the GENERATION step imports (numba,
+# Corrfunc), so that a broken env stops the task here and not after prepare_sim.
 FIXED=1
-if ! python - <<'EOF'
+rc=0
+python - <<'EOF' || rc=$?
 import sys
 import abacusnbody
 from abacusnbody.hod import prepare_sim
+from abacusnbody.hod.abacus_hod import AbacusHOD  # noqa: F401
 ok = hasattr(prepare_sim, "load_env_halos")
 print("abacusutils: %s   local-environment fix (PR #207): %s" % (abacusnbody.__version__, "yes" if ok else "NO"))
-sys.exit(0 if ok else 1)
+sys.exit(0 if ok else 10)
 EOF
-then
+if (( rc != 0 && rc != 10 )); then
+    echo "ERROR: conda env '$HOD_ENV' cannot import AbacusHOD (traceback above). Nothing was run." >&2
+    echo "       On a login node:  bash slurm/setup_env_envfix.sh" >&2
+    echo "       It is safe to re-run: it completes the install, tests every import and says" >&2
+    echo "       which package fails and where it is loaded from." >&2
+    exit 6
+fi
+if (( rc == 10 )); then
     if [[ "${ALLOW_UNFIXED:-0}" == 1 ]]; then
         echo "WARNING: ALLOW_UNFIXED=1: running WITHOUT the local-environment fix."
         FIXED=0

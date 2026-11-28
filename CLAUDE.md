@@ -707,6 +707,31 @@ or job-submission changes.
         - abacusutils main is pure Python (setuptools_scm, no LFS) and needs
           python ≥ 3.10. The pip install was run for real in the sandbox;
           conda itself was a stand-in.
+      - **The user's first run of it failed (2026-11-28, login node)**: numba
+        died at import with `module 'coverage.types' has no attribute 'Tracer'.
+        Did you mean: 'TTracer'?`.
+        - numba uses `coverage` whenever one is importable and needs
+          coverage ≥ 7.4.
+        - A conda env is a regular, non-venv Python, so it puts the USER site
+          (`~/.local/lib/python3.11/site-packages`) BEFORE its own
+          site-packages. A stale package there shadows the env, and upgrading
+          inside the env cannot help.
+        - pip in that run also counted user-site packages as installed, so
+          dependencies "already satisfied" from `~/.local` never reached the env.
+        - Fix: the script writes `etc/conda/activate.d/zz_envfix_isolate.sh`
+          (`PYTHONNOUSERSITE=1`; with `CLEAR_PYTHONPATH=1` it also unsets
+          PYTHONPATH) and a deactivate.d counterpart. It reruns pip with the
+          user site hidden, upgrades an in-env coverage < 7.4, lists every
+          imported package that comes from outside the env (then exits 1), and
+          checks the hook on a fresh activation. Re-running it repairs the
+          existing env.
+        - Where the user's stale coverage lives is not confirmed (the user
+          site is assumed; the script prints the path if it is PYTHONPATH).
+        - **Sandbox lesson:** a venv puts its own site-packages BEFORE the user
+          site, the opposite of conda. One test in a system-site venv passed
+          for the wrong reason (the venv had gained its own coverage). Test
+          user-site leaks in a regular prefix: `uv python install 3.11` into
+          the scratchpad, copy it per env, delete `EXTERNALLY-MANAGED`.
       - Other changes on main since v2.1.2 were reviewed. GRAND_HOD.py is
         cosmetic only. The LRG path of subsample_halos / submask_particles is
         unchanged (BGS got its own branch). The AbacusHOD, run_hod and
@@ -726,6 +751,10 @@ or job-submission changes.
         - It activates `HOD_ENV` (abacus_envfix) after _common.sh. The
           user's env.local.sh has a plain `CONDA_ENV=abacus`, which would
           override an exported CONDA_ENV.
+        - It exports `PYTHONNOUSERSITE=1` itself (`KEEP_USER_SITE=1` turns
+          that off). Its start-up check imports AbacusHOD in HOD_ENV, i.e. what
+          the generation step imports: exit 6 if that fails, before
+          prepare_sim runs.
         - It exits 5 if `prepare_sim.load_env_halos` is missing
           (`ALLOW_UNFIXED=1` overrides).
         - prepare_sim is skipped only when halo, particle AND env files exist
