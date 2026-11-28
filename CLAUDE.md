@@ -670,6 +670,30 @@ or job-submission changes.
       - A real fix means a patched prepare_sim (tree from the slab plus its
         two neighbours, ideally box-wide ranks), then regenerating subsamples,
         catalogs and lrgs.py results. Not started; it is the user's call.
+    - **Known upstream and already fixed on abacusutils `main`, but in no
+      release** (checked 2026-11-28 in a clone of abacusorg/abacusutils and on
+      the PR pages).
+      - PR #207 "fix local env B related artificial spikes" by Hanyu Zhang
+        (ahnyu): opened 2026-04-08, merged 2026-04-14 as a9b42ac by Lehman
+        Garrison. No separate issue was filed.
+      - Its description matches ours: Menv was estimated independently within
+        each superslab, which gave an x-dependent striping of fenv, and its
+        plots show spikes near k = 0.11, 0.22, 0.33.
+      - The fix: prepare_sim pads each slab with neighbour-slab halos within
+        rad_outer and writes raw Menv to
+        `env_xcom_<i>_abacushod_localenv_new.h5`. abacus_hod.py then ranks
+        fenv over the WHOLE box and maps it back by halo id. Periodic boxes
+        only; light cones are unchanged.
+      - PR #208 (5f1acb1, same day) makes it safe for boxes with one or two
+        slabs.
+      - The latest release is v2.1.2 (2025-10-13), so every pip/conda install
+        still has the bug. The fix needs an install from GitHub main.
+      - Test for the fix: `hasattr(abacusnbody.hod.prepare_sim,
+        'load_env_halos')`.
+      - With the fixed version prepare_sim must be rerun: abacus_hod raises
+        FileNotFoundError without the env sidecars. Then regenerate catalogs
+        and lrgs.py results. The shifted fields depend only on the ICs, so
+        they stay valid.
       - Tests: `slab_profile.py CATALOG...` gives the folded density and
         first-harmonic amplitude A1 along x, y and z, for all galaxies,
         centrals and satellites.
