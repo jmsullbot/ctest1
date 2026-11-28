@@ -725,8 +725,10 @@ or job-submission changes.
           imported package that comes from outside the env (then exits 1), and
           checks the hook on a fresh activation. Re-running it repairs the
           existing env.
-        - Where the user's stale coverage lives is not confirmed (the user
-          site is assumed; the script prints the path if it is PYTHONPATH).
+        - Confirmed by the user (2026-11-28): `coverage` 7.2.7 at
+          `/global/homes/j/jsull/.local/lib/python3.11/site-packages/`. Every
+          Python 3.11 env of theirs searches that folder before its own
+          packages. What else is in it is unknown.
         - **Sandbox lesson:** a venv puts its own site-packages BEFORE the user
           site, the opposite of conda. One test in a system-site venv passed
           for the wrong reason (the venv had gained its own coverage). Test
