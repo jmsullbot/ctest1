@@ -734,6 +734,52 @@ or job-submission changes.
           for the wrong reason (the venv had gained its own coverage). Test
           user-site leaks in a regular prefix: `uv python install 3.11` into
           the scratchpad, copy it per env, delete `EXTERNALLY-MANAGED`.
+      - **The re-run (2026-11-28) REBUILT the env, then stopped on a false
+        alarm.** Both were flaws of the script, found on the user's machine.
+        - The user's conda: 23.3.1, base
+          `/global/cfs/projectdirs/m4031/jsull/env` (python 3.10, libmamba
+          solver). Their `~/.condarc` puts
+          `/pscratch/sd/d/divij18/conda_envs` FIRST in `envs_dirs`, and they
+          cannot read it.
+        - So `conda env list` crashes there (PermissionError in `os.scandir`),
+          prints a ~150-line report and, on a tty, waits 40 s for "send this
+          report?". `conda activate NAME`, `conda create -n`, `conda config
+          --show` and `conda info --base` are unaffected (they only stat).
+        - The script read the crash as "env does not exist" and ran `conda
+          create -n abacus_envfix -y`. **`conda create -y` on an existing env
+          deletes it and builds it afresh** (main_create.py: the "Remove
+          existing environment" question is auto-answered yes, then rm_rf).
+          Nothing was lost this time.
+        - **Never use `conda env list` or `conda info --envs` in a script, and
+          never pair `conda create -y` with an unreliable existence test.**
+          `env_prefix` (setup_env_envfix.sh, setup_env.sh) looks a name up as
+          conda does: `<envs_dir>/<name>` for each entry of `conda config
+          --show envs_dirs`. `_common.sh` still calls `conda env list`, only on
+          its activation-failure path.
+        - The user's copy of `slurm/setup_env.sh` has the old test. Re-running
+          it there would rebuild their `abacus` env; they were told.
+        - The run then ended with exit 1: "packages loaded from OUTSIDE this
+          env: nersc_pymon /opt/nersc/pymon/nersc_pymon/__init__.py". NERSC
+          sets `PYTHONPATH=/opt/nersc/pymon` for everyone, and its
+          sitecustomize loads nersc_pymon in every Python process. Harmless.
+        - The check now treats modules already loaded at interpreter start-up
+          as site hooks, and is fatal only when an import fails or a package
+          of the env is shadowed.
+        - The env was complete at that point (the hooks are written before
+          pip, and every import passed), so the user went on to the job
+          without another setup run.
+        - **The sandbox can run the real thing; use it for conda logic.**
+          Miniforge3-23.3.1-0 from GitHub releases is conda 23.3.1 with
+          conda-libmamba-solver 23.3.0, the user's versions, and conda-forge
+          is reachable (real corrfunc 2.5.3, numba 0.68.1, numpy 2.4.6).
+          - Run it as a non-root user: `useradd -m tester`, files under
+            /home/tester, a copy of the CA bundle there, `runuser -u tester --
+            env -i bash -c ...`. Root bypasses the directory permissions that
+            cause the crash.
+          - With an unreadable first envs_dir, `~/.local/lib/python3.11` holding
+            coverage 7.2.7, and a sitecustomize + helper package on PYTHONPATH,
+            the two earlier scripts reproduce both of the user's failures line
+            for line. The stand-in condas hid them.
       - Other changes on main since v2.1.2 were reviewed. GRAND_HOD.py is
         cosmetic only. The LRG path of subsample_halos / submask_particles is
         unchanged (BGS got its own branch). The AbacusHOD, run_hod and
@@ -817,9 +863,32 @@ or job-submission changes.
   catalogs. ICs are 25 × ~0.8 GB.
 - ph000's IC lives at `$PSCRATCH/abacus_ics_000/` (user layout). The runner
   expects `$IC_ROOT/<sim>/ic/ic_dens_N576.asdf`: fetch ph000 again or symlink.
-- Not runnable in the sandbox: real AbacusHOD/prepare_sim, real Globus, and
-  Blosc-compressed asdf (no abacusutils). The bash flows were tested with
-  stubs and fake trees.
+- Not runnable in the sandbox: real Globus and the real AbacusSummit boxes.
+  **Real prepare_sim and AbacusHOD ARE runnable (found 2026-11-28)**, on the
+  mini box that ships with abacusutils (`tests/Mini_N64_L32`: 3 halo_info
+  slabs, z0.000, cleaning included), in a real conda env (see the Miniforge
+  note under the envfix decision).
+  - Symlink it as `<sim_dir>/AbacusSummit_base_c000_ph007` and
+    `<sim_dir>/cleaning/AbacusSummit_base_c000_ph007`, and set `z_mock: 0.0`.
+  - Set `Nparallel_load: 2` on a 4-core box. With `Nthread_per_load: 'auto'`
+    prepare_sim uses `len(os.sched_getaffinity(0)) // Nparallel_load` threads
+    per load; that is 0 for 4 cores and 5 loads, and scipy then raises
+    "Invalid number of workers 0". On a Perlmutter CPU node it is 256 // 5 = 51.
+  - Set `NUMBA_NUM_THREADS=128` for the job's `--Nthread 128`.
+  - Done with the user's package versions (numpy 2.4.6, numba 0.68.1, asdf
+    6.0.0, h5py 3.16.0, astropy 8.0.3, Corrfunc 2.5.3, abacusutils b4e33ed):
+    - upstream `tests/test_hod.py` passes its prepare_sim, LRG and ELG
+      reference comparisons; only its last step (zcv) fails, for lack of
+      `classy`;
+    - `perlmutter_phases_hod_array.sbatch` ran end to end with the user's
+      generate script as far as it can be rebuilt (c348f5c + the minimal
+      `--sim_name` patch): env files hold `Menv`, `id`, `mass`; rows 1003 and
+      2155 were written (5 and 3 galaxies in that tiny box); a resubmit skips
+      prepare_sim; check_phases.sh reads the real file names
+      (`halos_xcom_<i>_seed600_abacushod_oldfenv_new.h5`,
+      `particles_xcom_<i>_seed600_abacushod_oldfenv_withranks_new.h5`,
+      `env_xcom_<i>_abacushod_localenv_new.h5`).
+  - Still untested: the 2000 Mpc/h boxes themselves (time, memory, 34 slabs).
 - Where things are on Perlmutter (2026-11-24):
   - The base-box repo the jobs run from is
     `/pscratch/sd/j/jsull/qso_sbp/old_lrgs/ctest1`. The small-box copy is

@@ -542,8 +542,13 @@ sbatch <repo>/slurm/perlmutter_phases_lrgs_array.sbatch   # 3. shifted fields (r
   `module 'coverage.types' has no attribute 'Tracer'`. The script therefore
   installs an activation hook that sets `PYTHONNOUSERSITE=1`, runs pip with
   `~/.local` hidden, and lists every package loaded from outside the env.
-  It is safe to re-run on an existing env. `CLEAR_PYTHONPATH=1` makes the hook
-  unset `PYTHONPATH` too, if the check reports packages coming from there.
+  It is safe to re-run: an existing env is reused, never recreated. (It is
+  found by looking in conda's `envs_dirs`, not with `conda env list`, which
+  fails when one of those folders is unreadable.) `CLEAR_PYTHONPATH=1` makes the
+  hook unset `PYTHONPATH` too, if the check reports a package from there that
+  fails to import or shadows the env's own. NERSC's `nersc_pymon` monitor,
+  loaded at start-up through the system-wide `PYTHONPATH`, is reported as
+  harmless.
 - Step 2 activates `HOD_ENV` (default `abacus_envfix`) whatever
   `slurm/env.local.sh` names. Before anything runs it imports what the
   generation step imports and stops if that fails (exit 6) or if that

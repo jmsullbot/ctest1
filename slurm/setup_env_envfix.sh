@@ -34,6 +34,9 @@
 #   CONDA_BASE       your conda root, if not found automatically
 # slurm/env.local.sh is read for CONDA_BASE only, so its CONDA_ENV cannot
 # change which env this script creates.
+# An existing env is found by looking in conda's envs_dirs, never with
+# "conda env list" (which fails if one of those folders is unreadable); it is
+# then reused, never recreated.
 
 set -euo pipefail
 
@@ -74,18 +77,39 @@ set +u
 # shellcheck disable=SC1091
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 set -u
+export CONDA_REPORT_ERRORS=false    # if a conda command crashes: no "send this report?" prompt, nothing uploaded
 
-env_exists() {
-    if [[ "$1" == */* ]]; then [[ -d "$1" ]]; else conda env list | awk 'NF && $1 !~ /^#/ {print $1}' | grep -qx "$1"; fi
+# Prefix of env $1 (a name or a path), if it exists. A name is looked up the way
+# conda itself does it: <envs_dir>/<name> for each of its envs_dirs, in order.
+# "conda env list" is NOT used: it fails outright when one envs_dir is
+# unreadable, and "conda create -y" DELETES an existing env of the same name.
+env_prefix() {
+    local name="$1" d
+    if [[ "$name" == */* ]]; then
+        if [[ -d "$name" ]]; then printf '%s\n' "${name%/}"; return 0; fi
+        return 1
+    fi
+    while IFS= read -r d; do
+        if [[ -n "$d" && -d "$d/$name" ]]; then printf '%s\n' "$d/$name"; return 0; fi
+    done < <( set +eu
+              conda config --show envs_dirs 2>/dev/null | sed -n 's/^[[:space:]]*-[[:space:]]*//p'
+              printf '%s\n' "$CONDA_BASE/envs" "$HOME/.conda/envs" )
+    return 1
 }
 
 # ---- create the env: Corrfunc and the compiled stack from conda-forge in one solve
-if env_exists "$NEW_ENV"; then
-    echo "Environment '$NEW_ENV' already exists: reusing it."
+if ENV_DIR="$(env_prefix "$NEW_ENV")"; then
+    echo "Environment '$NEW_ENV' already exists: reusing it ($ENV_DIR)."
+    if [[ ! -x "$ENV_DIR/bin/python" ]]; then
+        echo "ERROR: $ENV_DIR has no bin/python: a create was probably interrupted." >&2
+        echo "       Remove that folder (rm -rf) and run this script again." >&2
+        exit 1
+    fi
 else
     echo "Creating '$NEW_ENV' from conda-forge (this takes a few minutes)..."
     if [[ "$NEW_ENV" == */* ]]; then target=(-p "$NEW_ENV"); else target=(-n "$NEW_ENV"); fi
     conda create "${target[@]}" -c conda-forge -y "python=$PYVER" corrfunc numba scipy h5py pyyaml astropy pip
+    ENV_DIR="$(env_prefix "$NEW_ENV")" || { echo "ERROR: cannot find '$NEW_ENV' after creating it." >&2; exit 1; }
 fi
 
 set +u
@@ -144,6 +168,7 @@ echo
 echo "Verifying..."
 python - <<'PY'
 import importlib, os, site, sys, sysconfig
+startup = set(sys.modules)        # loaded before anything is imported here: the interpreter and site hooks
 prefix = os.path.realpath(sys.prefix) + os.sep
 stdlib = tuple(os.path.realpath(sysconfig.get_path(k)) + os.sep for k in ("stdlib", "platstdlib"))
 
@@ -177,24 +202,44 @@ try:
     print("  AbacusHOD   importable")
 except Exception as exc:
     print("  AbacusHOD   FAILED: %s: %s" % (type(exc).__name__, exc)); bad.append("AbacusHOD")
-# every imported package must come from this env, not from ~/.local or PYTHONPATH
-leaks = {}
+# Where do the imported packages come from? A package from ~/.local or PYTHONPATH
+# is fatal if an import failed or if it shadows a package installed in this env.
+# Modules that were already loaded at interpreter start-up are site hooks (on
+# Perlmutter: NERSC's nersc_pymon, via the system-wide PYTHONPATH) and harmless.
+site_dirs = {os.path.realpath(sysconfig.get_path(k)) for k in ("purelib", "platlib")}
+
+
+def in_env(name):
+    return any(os.path.exists(os.path.join(d, name + ext)) for d in site_dirs for ext in ("", ".py"))
+
+
+pulled, hooks = {}, {}
 for name, m in list(sys.modules.items()):
     f = getattr(m, "__file__", None)
-    if name in ("sitecustomize", "usercustomize") or name.startswith("__"):
-        continue                                  # interpreter start-up hooks and __main__, not packages
-    if f and "." not in name and f.endswith((".py", ".so", ".pyc")) and not from_env(f):
-        leaks[name] = os.path.realpath(f)
-if leaks:
+    if not f or "." in name or name.startswith("__") or not f.endswith((".py", ".so", ".pyc")) or from_env(f):
+        continue
+    if name in startup or name in ("sitecustomize", "usercustomize"):
+        hooks[name] = os.path.realpath(f)
+    else:
+        pulled[name] = os.path.realpath(f)
+shadowing = sorted(n for n in list(pulled) + list(hooks) if in_env(n))
+if pulled or shadowing:
     print("  packages loaded from OUTSIDE this env:")
-    for name in sorted(leaks):
-        print("    %-12s %s" % (name, leaks[name]))
+    for name in sorted(set(pulled) | set(shadowing)):
+        print("    %-12s %s%s" % (name, pulled.get(name) or hooks[name],
+                                 "   <- shadows this env's own" if name in shadowing else ""))
     print("    user site enabled: %s   PYTHONPATH: %s" % (site.ENABLE_USER_SITE, os.environ.get("PYTHONPATH") or "(unset)"))
-    if os.environ.get("PYTHONPATH"):
-        print("    If they come from PYTHONPATH, re-run as:  CLEAR_PYTHONPATH=1 bash slurm/setup_env_envfix.sh")
-    bad.append("outside packages")
+    if bad or shadowing:
+        if os.environ.get("PYTHONPATH"):
+            print("    If they come from PYTHONPATH, re-run as:  CLEAR_PYTHONPATH=1 bash slurm/setup_env_envfix.sh")
+        bad.append("outside packages")
+    else:
+        print("    Everything imports and nothing in this env is shadowed, so this is not an error.")
 else:
     print("  every package comes from this env")
+if hooks and not shadowing:
+    print("  (start-up hooks from outside the env, harmless: %s)"
+          % ", ".join("%s in %s" % (n, os.path.dirname(hooks[n])) for n in sorted(hooks)))
 sys.exit(1 if bad else 0)
 PY
 
@@ -211,17 +256,16 @@ fi
 
 # ---- for the record: what the old env has
 echo
-if env_exists "$OLD_ENV"; then
-    if [[ "$OLD_ENV" == */* ]]; then old=(-p "$OLD_ENV"); else old=(-n "$OLD_ENV"); fi
+if OLD_DIR="$(env_prefix "$OLD_ENV")" && [[ -x "$OLD_DIR/bin/python" ]]; then
     echo "Old env '$OLD_ENV' for the record:"
-    # read the version and the source without importing the package (no numba needed)
-    ( unset PYTHONNOUSERSITE          # the old env keeps its usual surroundings
-      conda run "${old[@]}" python -c "
+    # read the version and the source without importing the package (no numba needed);
+    # the old env keeps its usual surroundings, ~/.local included
+    env -u PYTHONNOUSERSITE "$OLD_DIR/bin/python" -c "
 import importlib.util, os
 from importlib.metadata import version
 pkg = importlib.util.find_spec('abacusnbody').submodule_search_locations[0]
 src = open(os.path.join(pkg, 'hod', 'prepare_sim.py')).read()
-print('  abacusutils', version('abacusutils'), '| has the fix:', 'def load_env_halos(' in src)" 2>/dev/null ) \
+print('  abacusutils', version('abacusutils'), '| has the fix:', 'def load_env_halos(' in src, '|', pkg)" 2>/dev/null \
         || echo "  (could not query it)"
 else
     echo "Old env '$OLD_ENV' not found: nothing to compare."

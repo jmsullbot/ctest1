@@ -59,16 +59,30 @@ set +u
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 set -u
 
-# Create the env if needed.  CONDA_ENV may be a name or a full prefix path.
-if [[ "$CONDA_ENV" == */* ]]; then
-    if [[ -d "$CONDA_ENV" ]]; then
-        echo "Environment prefix already exists — reusing it."
-    else
-        echo "Creating conda environment at prefix '$CONDA_ENV'…"
-        conda create -p "$CONDA_ENV" "python=$PYVER" -y
+# Prefix of env $1 (a name or a path), if it exists. A name is looked up the way
+# conda itself does it: <envs_dir>/<name> for each of its envs_dirs, in order.
+# "conda env list" is NOT used: it fails outright when one envs_dir is
+# unreadable, and "conda create -y" DELETES an existing env of the same name.
+env_prefix() {
+    local name="$1" d
+    if [[ "$name" == */* ]]; then
+        if [[ -d "$name" ]]; then printf '%s\n' "${name%/}"; return 0; fi
+        return 1
     fi
-elif conda env list | awk 'NF && $1 !~ /^#/ {print $1}' | grep -qx "$CONDA_ENV"; then
-    echo "Environment '$CONDA_ENV' already exists — reusing it."
+    while IFS= read -r d; do
+        if [[ -n "$d" && -d "$d/$name" ]]; then printf '%s\n' "$d/$name"; return 0; fi
+    done < <( set +eu
+              conda config --show envs_dirs 2>/dev/null | sed -n 's/^[[:space:]]*-[[:space:]]*//p'
+              printf '%s\n' "$CONDA_BASE/envs" "$HOME/.conda/envs" )
+    return 1
+}
+
+# Create the env if needed.  CONDA_ENV may be a name or a full prefix path.
+if ENV_DIR="$(env_prefix "$CONDA_ENV")"; then
+    echo "Environment '$CONDA_ENV' already exists — reusing it ($ENV_DIR)."
+elif [[ "$CONDA_ENV" == */* ]]; then
+    echo "Creating conda environment at prefix '$CONDA_ENV'…"
+    conda create -p "$CONDA_ENV" "python=$PYVER" -y
 else
     echo "Creating conda environment '$CONDA_ENV'…"
     conda create -n "$CONDA_ENV" "python=$PYVER" -y
