@@ -623,8 +623,53 @@ or job-submission changes.
       - It equals A1 ≈ 0.19 along one axis (0.13 each if along two). The 34 k_f
         shell holds 14754 modes, and N_gal = 870k.
     - Row 1003 has **Bcent = 0.988 (99th percentile of the table)** and σ =
-      0.017 (near-step centrals). The suspect is the environment AbacusHOD's
-      assembly bias uses, near superslab boundaries. Unproven.
+      0.017 (near-step centrals). The suspect was the environment AbacusHOD's
+      assembly bias uses, near superslab boundaries.
+    - **CONFIRMED in the abacusutils source (2026-11-28, v2.1.2 sdist from
+      PyPI; the user's installed version is unknown):**
+      - `prepare_sim.prepare_slab(i)` loads ONE `halo_info_NNN.asdf` and sets
+        `allpos = halos['x_L2com']`. `menv.do_Menv_from_tree` builds the
+        KDTree from those halos only, with `boxsize=Lbox`. Its own comment
+        says "periodicity exists only in y and z directions".
+      - So a halo within `rad_outer` (default 10 Mpc/h in 2.1.2) of a
+        superslab x-boundary has no neighbours from the next file, and its
+        Menv is too low. `calc_fenv_opt` then ranks Menv per mass bin WITHIN
+        the slab.
+      - GRAND_HOD.py, LRG centrals: `logM_cut + Ac*deltac + Bc*fenv`, with
+        fenv in [-0.5, 0.5]. Satellites use Bs in M1 the same way.
+      - Hence a pattern of period L/34 along x with amplitude ∝ Bcent, in
+        EVERY base-box catalog made with want_AB and B ≠ 0. It was there from
+        the first base run on.
+    - **Not caused by any change in this work.** The user asked whether the
+      agent had broken something (2026-11-28).
+      - ph000's result file in the tar is dated 2026-11-09 (original
+        unpatched lrgs.py, original catalog) and has the same spike: n̄P_err
+        1.766 at 34 k_f against 0.73 beside it.
+      - The Nov 13 hod-2155 compare_perr plot (recovered from the session
+        transcript) already shows it at both Nmesh 256 and 512: μ1 ≈ 1.01 and
+        real ≈ 0.81 at k = 0.107, against ≈ 0.71. The small-box panel has no
+        such point. Nobody flagged that single dot, the agent included.
+      - Row 2155 has Bcent = −0.369. Its spike power is ~0.10 against 1.02;
+        corrected for N_gal that is 0.148 in A1², and (0.369/0.988)² = 0.139.
+        So the power goes as Bcent².
+      - What is new is only the detector in phase_perr.py, a row with ~10×
+        the spike power, and 25 phases (252σ instead of one dot).
+      - The detector flags nothing on spike-free synthetic data. The masked
+        per-phase fit equals fit_perr.fit with those 4 bins removed (D
+        0.2783, ℓ_F 4.903 for ph007).
+    - **Correction to an earlier claim** ("only those four bins are affected,
+      the rest of P_err is clean"): that is true only to first order.
+      - The same modulation multiplies the galaxy field, so it moves
+        (A1/2)² ≈ 0.9 % of the clustering power by ±34 k_f along x. That is a
+        smooth extra n̄P_err of order 0.01 for row 1003 and ~0.002 for row
+        2155 (estimate, not measured).
+      - More basic: the environment rank is wrong for every halo within
+        rad_outer of a boundary (20 of every 59 Mpc/h if rad_outer is 10, 10
+        if it is 5). So part of the "environment" these mocks respond to is
+        artificial. Masking bins does not undo that.
+      - A real fix means a patched prepare_sim (tree from the slab plus its
+        two neighbours, ideally box-wide ranks), then regenerating subsamples,
+        catalogs and lrgs.py results. Not started; it is the user's call.
       - Tests: `slab_profile.py CATALOG...` gives the folded density and
         first-harmonic amplitude A1 along x, y and z, for all galaxies,
         centrals and satellites.
