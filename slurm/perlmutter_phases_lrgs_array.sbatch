@@ -15,10 +15,14 @@
 #
 # Each task, for phase NNN (= the task id), works under $OUTROOT/phNNN/, next to
 # the catalogs/ the HOD array wrote:
-#   1. python my_generate_shifted_fields.py --ic <phase IC> --out phNNN/shifted_fields/ --axes 2
-#      Real space plus redshift-space axis 2, the only axis lrgs.py reads.
-#      Skipped when the files exist at full size (FORCE_FIELDS=1 redoes them).
-#      [mem] lines log node memory every minute; ph000's run peaked at 306 GiB.
+#   1. Shifted fields. They depend only on the initial conditions, not on the
+#      catalogs, so existing ones are reused: if phNNN/shifted_fields/ is not
+#      there, the fields in $FIELDS_FROM/phNNN/shifted_fields/ (ph000:
+#      $PH000_FIELDS) are linked in when complete. Otherwise
+#      python my_generate_shifted_fields.py --ic <phase IC> --out phNNN/shifted_fields/ --axes 2
+#      makes real space plus redshift-space axis 2, the only axis lrgs.py reads
+#      (FORCE_FIELDS=1 always regenerates). [mem] lines log node memory every
+#      minute; ph000's run peaked at 306 GiB.
 #   2. python lrgs.py --batch_size 1 --batch_num <row> --ph NNN --path phNNN/ --pathD phNNN/catalogs/
 #      for each row in ROWS. lrgs.py itself skips results that exist.
 # Outputs:
@@ -26,18 +30,23 @@
 #   phNNN/shifted_fields/shifted_fields_redshift_axisrsd_2_N_512_c_0.npy   3.2 GB
 #   phNNN/results/results_AbacusBase_c=0_ph=NNN_hod=1003_z=0.5000_Nmesh_512.npy
 #   phNNN/results/results_RSD_AbacusBase_c=0_ph=NNN_hod=1003_z=0.5000_Nmesh_512_axisrsd_2.npy
-# ph000 is left out of the default array: its fields and results already exist
-# in Heavy_files_Andrej/AbacusBase/ (ALLOW_PH000=1 recomputes it here anyway).
-# Resubmitting is safe: finished fields and results are not redone.
+# The default OUTROOT holds the catalogs made with the fixed abacusutils
+# (slurm/perlmutter_phases_hod_array.sbatch), ph000 included. The earlier,
+# unfixed results stay where they were ($PSCRATCH/lrg_hods_phases and
+# Heavy_files_Andrej/AbacusBase/results). Resubmitting is safe: finished fields
+# and results are not redone. With linked fields a task takes minutes.
 #
 # Settings (--export=ALL,VAR=...):
 #   ROWS 1003 | NMESH 512 (checked against both scripts) | COSMO c000
 #   AXES "2" (must include 2; "0 1 2" writes all three, then use -t 04:00:00)
-#   OUTROOT $PSCRATCH/lrg_hods_phases | IC_ROOT $PSCRATCH/AbacusSummit | IC_FILE ic_dens_N576.asdf
+#   OUTROOT $PSCRATCH/lrg_hods_phases_envfix | IC_ROOT $PSCRATCH/AbacusSummit | IC_FILE ic_dens_N576.asdf
+#   FIELDS_FROM      root whose phNNN/shifted_fields/ are reused (default $PSCRATCH/lrg_hods_phases)
+#   PH000_FIELDS     ph000's fields (default $PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusBase/shifted_fields)
 #   GEN, LRGS        the two scripts (default: in the submit directory)
 #   CONDA_ENV        default nbodykit_env_25 (nbodykit, asdf, abacusutils); ENV_READY=1 skips activation
 #   FORCE_FIELDS=1   regenerate the fields even if they exist
-#   DELETE_FIELDS=1  delete this phase's fields once its results are written (5.4 GB each)
+#   DELETE_FIELDS=1  delete this phase's fields once its results are written (5.4 GB each);
+#                    for linked fields only the link is removed
 #   TRACE_SEC        memory logging interval (default 60)
 #SBATCH -J lrgs_phases
 # Uncomment and set if you have more than one NERSC allocation; with a
@@ -48,7 +57,7 @@
 #SBATCH -N 1
 #SBATCH -c 256
 #SBATCH -t 03:00:00
-#SBATCH --array=1-24
+#SBATCH --array=0-24
 #SBATCH -o lrgs_phases_%A_%a.out
 set -uo pipefail
 
@@ -57,7 +66,9 @@ ROWS="${ROWS:-1003}"
 NMESH="${NMESH:-512}"
 AXES="${AXES:-2}"
 COSMO="${COSMO:-c000}"
-OUTROOT="${OUTROOT:-$PSCRATCH/lrg_hods_phases}"
+OUTROOT="${OUTROOT:-$PSCRATCH/lrg_hods_phases_envfix}"
+FIELDS_FROM="${FIELDS_FROM:-$PSCRATCH/lrg_hods_phases}"
+PH000_FIELDS="${PH000_FIELDS:-$PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusBase/shifted_fields}"
 IC_ROOT="${IC_ROOT:-$PSCRATCH/AbacusSummit}"
 IC_FILE="${IC_FILE:-ic_dens_N576.asdf}"
 GEN="${GEN:-$SUBMIT_DIR/my_generate_shifted_fields.py}"
@@ -69,16 +80,9 @@ SIM="AbacusSummit_base_${COSMO}_ph${PH}"
 PHDIR="$OUTROOT/ph$PH"
 IC="$IC_ROOT/$SIM/ic/$IC_FILE"
 FIELDS="$PHDIR/shifted_fields"
-REAL="$FIELDS/shifted_fields_real_N_${NMESH}_c_0.npy"
 
 echo "=== $SIM: shifted fields + lrgs.py, task ${SLURM_ARRAY_TASK_ID:-local} on $(hostname), $(date)"
 echo "rows: $ROWS   Nmesh: $NMESH   redshift-space axes: $AXES   phase dir: $PHDIR"
-
-if [[ $PH == 000 && "${ALLOW_PH000:-0}" != 1 ]]; then
-    echo "ph000 already has its fields and results in Heavy_files_Andrej/AbacusBase/: nothing to do"
-    echo "(ALLOW_PH000=1 recomputes it under $PHDIR)."
-    exit 0
-fi
 
 # ------------------------------------------------ the two scripts and inputs
 for s in "$GEN" "$LRGS"; do
@@ -120,18 +124,25 @@ python -c "import nbodykit, asdf" || { echo "ERROR: this env lacks nbodykit or a
 export PYTHONUNBUFFERED=1
 
 # ------------------------------------------------ 1. shifted fields
-complete() {   # file, number of NMESH^3 float32 grids it must hold
+complete() {   # file, number of NMESH^3 float32 grids it must hold (follows links)
     local f=$1 n=$2
-    [[ -f $f ]] && (( $(stat -c %s "$f") >= n * NMESH * NMESH * NMESH * 4 ))
+    [[ -f $f ]] && (( $(stat -L -c %s "$f") >= n * NMESH * NMESH * NMESH * 4 ))
 }
-fields_done() {
-    complete "$REAL" 4 || return 1
+fields_in() {  # directory: real space and every axis in AXES complete there?
+    complete "$1/shifted_fields_real_N_${NMESH}_c_0.npy" 4 || return 1
     local a
-    for a in $AXES; do complete "$FIELDS/shifted_fields_redshift_axisrsd_${a}_N_${NMESH}_c_0.npy" 6 || return 1; done
+    for a in $AXES; do complete "$1/shifted_fields_redshift_axisrsd_${a}_N_${NMESH}_c_0.npy" 6 || return 1; done
 }
-if fields_done && [[ "${FORCE_FIELDS:-0}" != 1 ]]; then
+# Reuse fields made earlier: they depend only on the IC, not on the catalogs.
+if [[ $PH == 000 ]]; then SRC="$PH000_FIELDS"; else SRC="$FIELDS_FROM/ph$PH/shifted_fields"; fi
+if [[ ! -e $FIELDS && "${FORCE_FIELDS:-0}" != 1 && "$(readlink -f "$SRC")" != "$(readlink -f "$FIELDS")" ]] && fields_in "$SRC"; then
+    ln -s "$SRC" "$FIELDS"
+    echo "linked existing shifted fields: $FIELDS -> $SRC"
+fi
+if fields_in "$FIELDS" && [[ "${FORCE_FIELDS:-0}" != 1 ]]; then
     echo "shifted fields exist in $FIELDS: generator skipped (FORCE_FIELDS=1 redoes them)"
 else
+    if [[ -L $FIELDS ]]; then rm "$FIELDS"; fi      # never generate into linked fields
     mkdir -p "$FIELDS"
     echo; echo "=== generator started $(date +%T): python $GEN --ic $IC --out $FIELDS/ --axes $AXES"
     t0=$SECONDS
@@ -154,7 +165,7 @@ else
     echo "=== generator exit code $rc after $(( (SECONDS - t0) / 60 )) min"
     (( rc == 137 )) && echo "killed by SIGKILL: almost certainly out of memory (see the last [mem] lines)"
     (( rc == 0 )) || exit 5
-    fields_done || { echo "ERROR: the generator finished but the fields in $FIELDS are missing or short" >&2; exit 5; }
+    fields_in "$FIELDS" || { echo "ERROR: the generator finished but the fields in $FIELDS are missing or short" >&2; exit 5; }
     ls -l "$FIELDS"
 fi
 
@@ -174,7 +185,12 @@ for r in $ROWS; do
 done
 
 if [[ "${DELETE_FIELDS:-0}" == 1 ]]; then
-    echo "DELETE_FIELDS=1: removing $FIELDS ($(du -sh "$FIELDS" | cut -f1))"
-    rm -rf "$FIELDS"
+    if [[ -L $FIELDS ]]; then
+        echo "DELETE_FIELDS=1: removing the link $FIELDS (the fields it points to are kept)"
+        rm "$FIELDS"
+    else
+        echo "DELETE_FIELDS=1: removing $FIELDS ($(du -sh "$FIELDS" | cut -f1))"
+        rm -rf "$FIELDS"
+    fi
 fi
 echo; echo "=== $SIM done $(date)"

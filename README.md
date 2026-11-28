@@ -515,44 +515,48 @@ The same pipeline as for `AbacusSummit_base_c000_ph000`, repeated on every c000
 phase box for one table row (default **1003**) at Nmesh 512: the HOD catalog,
 then your `my_generate_shifted_fields.py` and `lrgs.py`.
 
+**Use abacusutils from GitHub main.** Every release up to v2.1.2 computes the
+assembly-bias environment one halo file at a time, so catalogs with Bcent or
+Bsat ≠ 0 carry a pattern of period L/34 along x (spikes at k = 34 n · 2π/L).
+[PR #207](https://github.com/abacusorg/abacusutils/pull/207) fixes it on main.
+The phase jobs refuse to run without the fix and write to new folders, so the
+earlier catalogs are neither read nor overwritten.
+
 ```bash
+bash slurm/setup_env_envfix.sh                   # 0. once: conda env abacus_envfix, abacusutils from GitHub main
 bash slurm/check_phases.sh                       # 1. status: halos, cleaning, subs, IC, cat, fields, lrgs
-sbatch slurm/perlmutter_phases_hod_array.sbatch  # 2. prepare_sim + row 1003, one array task per phase
+sbatch slurm/perlmutter_phases_hod_array.sbatch  # 2. prepare_sim + row 1003, one array task per phase (0-24)
 cd <folder with my_generate_shifted_fields.py and lrgs.py, both patched>
-sbatch <repo>/slurm/perlmutter_phases_lrgs_array.sbatch   # 3. shifted fields + lrgs.py, ph001-ph024
+sbatch <repo>/slurm/perlmutter_phases_lrgs_array.sbatch   # 3. shifted fields (reused if made before) + lrgs.py
 ```
 
+- Folders: subsamples in `$PSCRATCH/lrg_hods_envfix/subsamples/`, catalogs and
+  results in `$PSCRATCH/lrg_hods_phases_envfix/phNNN/`. The earlier, unfixed run
+  stays in `$PSCRATCH/lrg_hods_phases/` (`OUTROOT=` selects it in every script).
 - ICs: the public `<AbacusSummit root>/ic/<sim>/ic_dens_N576.asdf`, symlinked
   into `$PSCRATCH/AbacusSummit/<sim>/ic/`. `slurm/globus_fetch_ic.sh` is only
   needed for a box whose IC is not on disk.
-- Step 2 skips `prepare_sim` for boxes whose subsamples exist (ph000), takes
-  `ROWS="1003 2155"` for more rows, and `CLEAN_SUBSAMPLES=1` frees the
-  subsamples it created once the rows are written. Catalogs land in
-  `$PSCRATCH/lrg_hods_phases/phNNN/catalogs/001003.npy`; copy ph000's from
-  `$PSCRATCH/lrg_hods/catalogs/`.
+- Step 2 activates `HOD_ENV` (default `abacus_envfix`) whatever
+  `slurm/env.local.sh` names, and stops if that abacusutils lacks the fix. The
+  fixed `prepare_sim` writes one extra `env_xcom_<i>_abacushod_localenv_new.h5`
+  per slab; the step is skipped only when halo, particle and environment files
+  are there for every slab. It takes `ROWS="1003 2155"` for more rows, and
+  `CLEAN_SUBSAMPLES=1` frees the subsamples it created once the rows are written.
 - Step 3 needs the two patches in `patches/`: `--ic/--out/--axes` for
   `my_generate_shifted_fields.py` and `--ph/--path/--pathD` for `lrgs.py`.
-  Without those options both scripts behave exactly as before (checked: same
-  files, byte for byte, on stand-in inputs).
-  - Per phase, on a whole CPU node: the fields (real space + RSD axis 2, the
-    only axis `lrgs.py` reads; ph000's run with all three axes took 169 min
-    and peaked at 306 GiB), then `lrgs.py` on the row.
-  - Outputs: `phNNN/shifted_fields/` (5.4 GB) and
-    `phNNN/results/results{,_RSD}_AbacusBase_c=0_ph=NNN_hod=1003_z=0.5000_Nmesh_512*.npy`.
-    ph000's are already in `Heavy_files_Andrej/AbacusBase/`.
-  - `DELETE_FIELDS=1` drops a phase's fields once its results exist;
-    resubmitting redoes nothing that is finished.
+  Without those options both scripts behave exactly as before.
+  - The shifted fields depend only on the initial conditions, so fields made
+    earlier are linked in (`FIELDS_FROM`, and `PH000_FIELDS` for ph000) and a
+    task takes minutes. Without them the generator runs: a whole CPU node,
+    ~1–1.5 h, 306 GiB peak.
+  - Outputs: `phNNN/results/results{,_RSD}_AbacusBase_c=0_ph=NNN_hod=1003_z=0.5000_Nmesh_512*.npy`.
 - Plots of n̄P_err over the phases (the compare_perr.py quantities and fit,
   with the phase scatter):
-  `python phase_perr.py $PSCRATCH/lrg_hods_phases $PSCRATCH/qso_sbp/Heavy_files_Andrej/AbacusBase/results --row 1003 --nmesh 512`
-  writes `perr_hod1003_N512_{mean,bins,phases,fits}.png/.pdf` and `_summary.txt`
-  (per-phase fits, window means, the fit to the mean with σ/√N errors).
-  Single-bin spikes (e.g. at k = 34 n · 2π/L in row 1003) are found, left out
-  of the fits and shown in `_spikes`.
+  `python phase_perr.py $PSCRATCH/lrg_hods_phases_envfix --row 1003 --nmesh 512`
+  writes `perr_hod1003_N512_{mean,bins,phases,fits,spikes}.png/.pdf` and
+  `_summary.txt`. Single-bin spikes are found, left out of the fits and shown
+  in `_spikes`; with the fix there should be none.
 - `slab_profile.py CATALOG...` folds the galaxy density with period L/34 along
   x, y, z (all, centrals, satellites) and prints the first-harmonic amplitude;
   `spike_scan.py RESULTS_DIR --ph 0 --nmesh 512` measures the 34/68 k_f excess
   of every row against its assembly-bias parameters.
-- An independent alternative for the field-level step is `perr_from_ic.py`
-  (`sbatch run_phases_perr.sh`, minutes per box, ensemble in
-  `phase_ensemble.py`).

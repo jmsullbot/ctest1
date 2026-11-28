@@ -664,9 +664,10 @@ or job-submission changes.
         smooth extra n̄P_err of order 0.01 for row 1003 and ~0.002 for row
         2155 (estimate, not measured).
       - More basic: the environment rank is wrong for every halo within
-        rad_outer of a boundary (20 of every 59 Mpc/h if rad_outer is 10, 10
-        if it is 5). So part of the "environment" these mocks respond to is
-        artificial. Masking bins does not undo that.
+        rad_outer of a boundary. rad_outer is 10 Mpc/h in every 2.x release,
+        so that is 20 of every 59 Mpc/h, a third of the volume. Part of the
+        "environment" these mocks respond to is artificial, and masking bins
+        does not undo that.
       - A real fix means a patched prepare_sim (tree from the slab plus its
         two neighbours, ideally box-wide ranks), then regenerating subsamples,
         catalogs and lrgs.py results. Not started; it is the user's call.
@@ -694,6 +695,62 @@ or job-submission changes.
         FileNotFoundError without the env sidecars. Then regenerate catalogs
         and lrgs.py results. The shifted fields depend only on the ICs, so
         they stay valid.
+    - **Decision (user, 2026-11-28): install abacusutils from GitHub main and
+      rerun ALL catalogs, the 25 phases first, then the 10500 rows.**
+      - `slurm/setup_env_envfix.sh` creates conda env `abacus_envfix`: python
+        3.11 with corrfunc, numba, scipy, h5py, pyyaml and astropy from
+        conda-forge in one solve, then `pip install "abacusutils @
+        git+https://github.com/abacusorg/abacusutils@b4e33ed7..."` (main of
+        2026-11-02, version 2.1.3.dev49+gb4e33ed72).
+        - It reads env.local.sh for CONDA_BASE only, verifies the fix and the
+          AbacusHOD import, and prints the old env's version.
+        - abacusutils main is pure Python (setuptools_scm, no LFS) and needs
+          python ≥ 3.10. The pip install was run for real in the sandbox;
+          conda itself was a stand-in.
+      - Other changes on main since v2.1.2 were reviewed. GRAND_HOD.py is
+        cosmetic only. The LRG path of subsample_halos / submask_particles is
+        unchanged (BGS got its own branch). The AbacusHOD, run_hod and
+        prepare_sim.main signatures still fit the user's generate_lrg_hods.py.
+        So the environment fix is the only functional change for LRGs.
+      - main logs through `logging` with no handler, so prepare_sim is silent
+        in a job log. The HOD job prints its own "[prepare_sim N min] n of 34
+        slabs written" heartbeat (PROGRESS_SEC, default 300).
+      - New folders: subsamples in `$PSCRATCH/lrg_hods_envfix/subsamples/`,
+        phases in `$PSCRATCH/lrg_hods_phases_envfix/phNNN/`. The unfixed run
+        stays in `$PSCRATCH/lrg_hods_phases/` and is not touched. These are
+        now the DEFAULTS of the three phase scripts.
+        - prepare_sim builds its path by string concatenation, so
+          subsample_dir must end in "/". The job writes it that way into
+          `config_base.yaml`.
+      - `perlmutter_phases_hod_array.sbatch` (array now 0–24, ph000 included):
+        - It activates `HOD_ENV` (abacus_envfix) after _common.sh. The
+          user's env.local.sh has a plain `CONDA_ENV=abacus`, which would
+          override an exported CONDA_ENV.
+        - It exits 5 if `prepare_sim.load_env_halos` is missing
+          (`ALLOW_UNFIXED=1` overrides).
+        - prepare_sim is skipped only when halo, particle AND env files exist
+          for every halo_info slab. It refuses subsamples without env files
+          (made by the unfixed code) unless FORCE_PREPARE=1.
+      - `perlmutter_phases_lrgs_array.sbatch` (array 0–24): shifted fields
+        made earlier are symlinked from `FIELDS_FROM/phNNN/shifted_fields`
+        (default the old root) or `PH000_FIELDS` (AbacusBase). The generator
+        runs only if they are missing. DELETE_FIELDS on a link removes the
+        link only.
+      - check_phases.sh shows subs = ok / old / part, and fields = ok / link.
+      - Tested on fake trees with the stand-in conda and the REAL abacusutils
+        main (Corrfunc was a stand-in): fresh run, rerun, old env refused,
+        unfixed subsamples refused, missing env, CLEAN_SUBSAMPLES, missing
+        box, prepare failure, linked / generated fields.
+      - The test caught a real bug: under `set -e` + pipefail, `find` on the
+        not-yet-existing subsample folder killed the task. `count()` now
+        returns 0 for a missing folder.
+      - **Still to do after the phases:**
+        - the 10500-row rerun with the fixed env (prepare_sim on ph000 into
+          the new subsample dir, new OUTDIR `$PSCRATCH/lrg_hods_envfix`,
+          another ~8 TB next to the old 8 TB, so space must be freed first),
+          then lrgs.py at 512 on all rows;
+        - check whether the small box is affected: count its halo_info
+          files. With a single file the old code was already periodic in x.
       - Tests: `slab_profile.py CATALOG...` gives the folded density and
         first-harmonic amplitude A1 along x, y and z, for all galaxies,
         centrals and satellites.
